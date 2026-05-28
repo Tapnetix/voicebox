@@ -18,6 +18,7 @@ from ..models import (
     VoiceOptionsResponse,
     VoiceProfileSummary,
 )
+from ..services import voice_casting as vc
 from ..services.task_queue import enqueue_generation
 from ..services.generation import run_generation
 from ..utils.tasks import get_task_manager
@@ -139,6 +140,13 @@ def update_character(
     if char is None or char.book_id != book_id:
         raise ValueError("404:character not found")
 
+    # Enforce "exactly one of" constraint for voice-assignment fields
+    voice_fields = [data.profile_id, data.design_prompt, data.preset_voice_id]
+    if sum(1 for f in voice_fields if f is not None) > 1:
+        raise ValueError(
+            "400:at most one of profile_id, design_prompt, preset_voice_id may be set"
+        )
+
     # Simple field updates
     if data.name is not None:
         char.name = data.name
@@ -156,39 +164,13 @@ def update_character(
         char.profile_id = data.profile_id
 
     elif data.design_prompt is not None:
-        # Create a new designed profile and assign it
-        name = _unique_profile_name(f"{char.name} — {book.title}", db)
-        new_profile = VoiceProfile(
-            id=str(uuid.uuid4()),
-            name=name,
-            voice_type="designed",
-            design_prompt=data.design_prompt,
-            book_id=book.id,
-            is_library=False,
-            created_at=datetime.utcnow(),
-            updated_at=datetime.utcnow(),
-        )
-        db.add(new_profile)
-        db.flush()
+        # Create a new designed profile and assign it (reuses voice_casting helper)
+        new_profile = vc.create_designed_profile(char, book, data.design_prompt, db)
         char.profile_id = new_profile.id
 
     elif data.preset_voice_id is not None:
-        # Create a new Kokoro preset profile and assign it
-        name = _unique_profile_name(f"{char.name} — {book.title}", db)
-        new_profile = VoiceProfile(
-            id=str(uuid.uuid4()),
-            name=name,
-            voice_type="preset",
-            preset_engine="kokoro",
-            preset_voice_id=data.preset_voice_id,
-            default_engine="kokoro",
-            book_id=book.id,
-            is_library=False,
-            created_at=datetime.utcnow(),
-            updated_at=datetime.utcnow(),
-        )
-        db.add(new_profile)
-        db.flush()
+        # Create a new Kokoro preset profile and assign it (reuses voice_casting helper)
+        new_profile = vc.create_preset_profile(char, book, data.preset_voice_id, db)
         char.profile_id = new_profile.id
 
     db.commit()

@@ -409,3 +409,17 @@ def test_preview_unknown_char_404(setup):
     client = setup["client"]
     r = client.post(f"/characters/{uuid.uuid4()}/preview", json={})
     assert r.status_code == 404
+
+
+def test_assign_multiple_voice_fields_400(setup):
+    """PATCH with both profile_id and design_prompt returns 400 (exactly-one-of enforcement)."""
+    client = setup["client"]
+    book_id = setup["book_id"]
+    uncast_char_id = setup["uncast_char_id"]
+    cast_char_profile_id = setup["cast_char_profile_id"]
+
+    r = client.patch(
+        f"/books/{book_id}/characters/{uncast_char_id}",
+        json={"profile_id": cast_char_profile_id, "design_prompt": "some text"},
+    )
+    assert r.status_code == 400

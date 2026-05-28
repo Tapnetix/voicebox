@@ -74,12 +74,18 @@ def _conflicts(
 # Profile creation helpers (no async — no TTS)
 # ---------------------------------------------------------------------------
 
-def _create_designed_profile(
+def create_designed_profile(
     character: BookCharacter,
     book: Book,
     prompt: str,
     db: Session,
 ) -> VoiceProfile:
+    """Create and flush a *designed* VoiceProfile for *character* in *book*.
+
+    The profile has book_id=book.id and is_library=False; name is
+    collision-safe via ``_unique_name``.  Callers must call db.commit()
+    themselves after any downstream assignments.
+    """
     name = _unique_name(f"{character.name} — {book.title}", db)
     profile = VoiceProfile(
         id=str(uuid.uuid4()),
@@ -96,12 +102,21 @@ def _create_designed_profile(
     return profile
 
 
-def _create_preset_profile(
+# Backward-compat alias — internal callers inside this module use this name.
+_create_designed_profile = create_designed_profile
+
+
+def create_preset_profile(
     character: BookCharacter,
     book: Book,
     voice_id: str,
     db: Session,
 ) -> VoiceProfile:
+    """Create and flush a *preset* (Kokoro) VoiceProfile for *character* in *book*.
+
+    The profile has book_id=book.id, is_library=False, preset_engine="kokoro".
+    Callers must call db.commit() themselves after any downstream assignments.
+    """
     name = _unique_name(f"{character.name} — {book.title}", db)
     profile = VoiceProfile(
         id=str(uuid.uuid4()),
@@ -118,6 +133,10 @@ def _create_preset_profile(
     db.add(profile)
     db.flush()
     return profile
+
+
+# Backward-compat alias — internal callers inside this module use this name.
+_create_preset_profile = create_preset_profile
 
 
 def _pick_preset(
