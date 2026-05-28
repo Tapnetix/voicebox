@@ -465,6 +465,73 @@ def test_merge_mixed_chapters_is_400(client, engine_and_session, seeded):
     assert r.status_code == 400, r.text
 
 
+def test_merge_invalidates_generated_audio(client, engine_and_session):
+    """Merged segment has audio_status='stale' when the first segment had a generation_id."""
+    _, TestSession = engine_and_session
+    db = TestSession()
+
+    book = Book(title="Audio Book", source_format="epub", status="analyzed")
+    db.add(book)
+    db.flush()
+    chapter = Chapter(book_id=book.id, number=1, raw_text="x", word_count=1)
+    db.add(chapter)
+    db.flush()
+    char = BookCharacter(book_id=book.id, name="Speaker", is_narrator=False)
+    db.add(char)
+    db.flush()
+
+    vp = VoiceProfile(name="merge-voice", language="en")
+    db.add(vp)
+    db.flush()
+
+    gen = Generation(
+        profile_id=vp.id,
+        text="Part one",
+        audio_path="/fake/merge.wav",
+        duration=1.5,
+        status="completed",
+    )
+    db.add(gen)
+    db.flush()
+
+    # First segment has a completed generation
+    seg_a = BookSegment(
+        chapter_id=chapter.id,
+        character_id=char.id,
+        type="dialogue",
+        order=0,
+        text="Part one",
+        emotion="neutral",
+        emotion_intensity=0.5,
+        delivery=None,
+        generation_id=gen.id,
+        audio_status="completed",
+    )
+    # Second adjacent segment has no generation
+    seg_b = BookSegment(
+        chapter_id=chapter.id,
+        character_id=char.id,
+        type="dialogue",
+        order=1,
+        text="part two",
+        emotion="neutral",
+        emotion_intensity=0.5,
+        delivery=None,
+        audio_status="none",
+    )
+    db.add_all([seg_a, seg_b])
+    db.commit()
+    seg_a_id, seg_b_id = seg_a.id, seg_b.id
+    db.close()
+
+    r = client.post("/segments/merge", json={"segment_ids": [seg_a_id, seg_b_id]})
+    assert r.status_code == 200, r.text
+    merged = r.json()
+    assert merged["audio"]["status"] == "stale", (
+        f"Expected 'stale' but got {merged['audio']['status']!r}"
+    )
+
+
 def test_merge_while_generating_409(client, engine_and_session):
     """409 when merging segments in a currently generating chapter."""
     _, TestSession = engine_and_session
