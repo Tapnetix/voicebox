@@ -32,7 +32,12 @@ logger = logging.getLogger(__name__)
 
 
 def run_migrations(engine) -> None:
-    """Run all schema migrations.  Safe to call on every startup."""
+    """Run all schema migrations.  Safe to call on every startup.
+
+    Note: the four new book tables (books, chapters, book_characters,
+    book_segments) are created by ``Base.metadata.create_all`` in ``init_db``;
+    this function only adds additive column migrations to existing tables.
+    """
     inspector = inspect(engine)
     tables = set(inspector.get_table_names())
 
@@ -139,6 +144,7 @@ def _migrate_story_items(engine, inspector, tables: set[str]) -> None:
 
 
 def _migrate_profiles(engine, inspector, tables: set[str]) -> None:
+    # Adds book_id and is_library columns; book tables themselves are in Base.metadata.create_all.
     if "profiles" not in tables:
         return
     columns = _get_columns(inspector, "profiles")

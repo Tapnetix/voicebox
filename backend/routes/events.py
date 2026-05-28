@@ -13,9 +13,12 @@ import asyncio
 import json
 import logging
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
+from sqlalchemy.orm import Session
 from sse_starlette.sse import EventSourceResponse
 
+from .. import database
+from ..database import get_db
 from ..mcp_server import events as mcp_events
 from ..services import book_events
 
@@ -52,7 +55,7 @@ async def speak_events(request: Request):
 
 
 @router.get("/events/books/{book_id}")
-async def book_events_stream(book_id: str, request: Request):
+async def book_events_stream(book_id: str, request: Request, db: Session = Depends(get_db)):
     """SSE stream of analysis/generation/export progress events for one book.
 
     All progress events are emitted as generic ``message`` events carrying a
@@ -62,17 +65,9 @@ async def book_events_stream(book_id: str, request: Request):
     The stream opens with a ``ready`` hello so the client knows the connection
     is live, then emits ``ping`` heartbeats every ~15 s to keep proxies from
     reaping idle streams.
-
-    Note: 404 validation against the Book ORM will be wired once the Book model
-    is available (task A2). At that point add::
-
-        from fastapi import Depends, HTTPException
-        from sqlalchemy.orm import Session
-        from .. import database
-
-        if db.query(database.Book).filter_by(id=book_id).first() is None:
-            raise HTTPException(404, "Book not found")
     """
+    if db.query(database.Book).filter_by(id=book_id).first() is None:
+        raise HTTPException(404, "Book not found")
 
     async def event_stream():
         queue = book_events.subscribe(book_id)

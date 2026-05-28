@@ -90,12 +90,7 @@ _CHAPTER_RE = re.compile(
 
 def _split_into_chapters(text: str, default_title: str | None = None) -> list[ParsedChapter]:
     """Split *text* on chapter-heading lines (or return as a single chapter)."""
-    parts = _CHAPTER_RE.split(text)
-    # _CHAPTER_RE has no capturing groups, so split() gives alternating
-    # [before, sep1, after1, sep2, after2, ...] — actually with MULTILINE
-    # and no capturing groups the separators are dropped.  We need to re-scan
-    # with finditer to preserve titles.
-
+    # Use finditer to preserve chapter titles (split() drops separators with no capturing groups).
     matches = list(_CHAPTER_RE.finditer(text))
 
     if not matches:
