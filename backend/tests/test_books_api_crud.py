@@ -12,8 +12,9 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from backend.database import Base, get_db
+from backend.database import Base, Book, get_db
 from backend.routes.books import router as books_router
+from backend.routes.book_analysis import router as book_analysis_router
 
 
 # ---------------------------------------------------------------------------
@@ -21,13 +22,11 @@ from backend.routes.books import router as books_router
 # ---------------------------------------------------------------------------
 
 
-@pytest.fixture(scope="function")
-def client(tmp_path, monkeypatch):
-    """Build a minimal app with a temp SQLite DB and the books router only."""
+def _make_app(tmp_path, monkeypatch, include_analysis: bool = False):
+    """Build a minimal app with a temp SQLite DB."""
     db_path = tmp_path / "test.db"
     engine = create_engine(f"sqlite:///{db_path}", connect_args={"check_same_thread": False})
     Base.metadata.create_all(engine)
-
     TestSession = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
     def override_get_db():
@@ -37,16 +36,45 @@ def client(tmp_path, monkeypatch):
         finally:
             db.close()
 
-    # Point the data dir at tmp_path so cover files go somewhere writable
     monkeypatch.setenv("VOICEBOX_DATA_DIR", str(tmp_path))
-    # Re-initialize config so it picks up the env var
     import backend.config as _cfg
     _cfg._data_dir = tmp_path
 
     app = FastAPI()
+    if include_analysis:
+        # Mock enqueue_analysis so the test doesn't start a real pipeline
+        import backend.services.book_analysis as ba_svc
+
+        def mock_enqueue(book_id, model_size, narrator_voice_id):
+            db = TestSession()
+            try:
+                book = db.query(Book).filter_by(id=book_id).first()
+                if book is not None:
+                    book.status = "analyzing"
+                    db.commit()
+            finally:
+                db.close()
+            return "mock-task-id"
+
+        monkeypatch.setattr(ba_svc, "enqueue_analysis", mock_enqueue)
+        app.include_router(book_analysis_router)
     app.include_router(books_router)
     app.dependency_overrides[get_db] = override_get_db
+    return app, TestSession
 
+
+@pytest.fixture(scope="function")
+def client(tmp_path, monkeypatch):
+    """Build a minimal app with a temp SQLite DB and the books router only."""
+    app, _ = _make_app(tmp_path, monkeypatch, include_analysis=False)
+    with TestClient(app) as c:
+        yield c
+
+
+@pytest.fixture(scope="function")
+def client_with_analysis(tmp_path, monkeypatch):
+    """Build a minimal app that includes both books_router and book_analysis_router."""
+    app, _ = _make_app(tmp_path, monkeypatch, include_analysis=True)
     with TestClient(app) as c:
         yield c
 
@@ -205,13 +233,17 @@ def test_delete_unknown_book_404(client):
 # ---------------------------------------------------------------------------
 
 
-def test_analyze_stub_returns_202(client):
-    """POST /books/{id}/analyze returns 202 with task_id and status=analyzing."""
+def test_analyze_returns_202(client_with_analysis):
+    """POST /books/{id}/analyze returns 202 with task_id and status=analyzing.
+
+    Uses a client that mounts both the books_router and book_analysis_router —
+    the A6 stub was replaced by the real B4 endpoint in routes/book_analysis.py.
+    """
     epub_data = _epub_bytes()
     files = {"file": ("silo.epub", epub_data, "application/epub+zip")}
-    bid = client.post("/books/import", files=files).json()["id"]
+    bid = client_with_analysis.post("/books/import", files=files).json()["id"]
 
-    r = client.post(f"/books/{bid}/analyze")
+    r = client_with_analysis.post(f"/books/{bid}/analyze", json={})
     assert r.status_code == 202
     body = r.json()
     assert body["book_id"] == bid
