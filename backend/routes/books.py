@@ -1,8 +1,9 @@
-"""Book CRUD, import, and analyze endpoints (contract 01).
+"""Book CRUD and import endpoints (contract 01).
 
 Wires: POST /books/import, GET /books, GET /books/{id},
-       PATCH /books/{id}, DELETE /books/{id},
-       POST /books/{id}/analyze (202 stub — B4 fills the real body).
+       PATCH /books/{id}, DELETE /books/{id}.
+
+POST /books/{id}/analyze lives in routes/book_analysis.py (B4).
 """
 
 from __future__ import annotations
@@ -13,7 +14,6 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
-from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
 from .. import database, models
@@ -259,19 +259,5 @@ async def delete_book(
     return {"message": "Book deleted"}
 
 
-@router.post("/{book_id}/analyze")
-async def analyze_book(
-    book_id: str,
-    db: Session = Depends(get_db),
-) -> JSONResponse:
-    """202 stub — B4 fills in the real enqueue logic and 409 guard."""
-    _get_book_or_404(book_id, db)  # raises 404 if not found
-    task_id = str(uuid.uuid4())
-    return JSONResponse(
-        status_code=202,
-        content={
-            "book_id": book_id,
-            "task_id": task_id,
-            "status": "analyzing",
-        },
-    )
+# NOTE: POST /{book_id}/analyze was a 202 stub here in A6.
+# B4 replaces it with the real endpoint in routes/book_analysis.py.
