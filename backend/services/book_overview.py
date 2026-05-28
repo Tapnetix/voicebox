@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session
 from ..database import BookSegment
 
 
+# orphan-ok: canonical rollup, also consumed by the books detail serializer and C8.
 def chapter_generation_state(chapter_id: str, db: Session) -> str:
     """Return a generation-state string for *chapter_id* based on its segments.
 

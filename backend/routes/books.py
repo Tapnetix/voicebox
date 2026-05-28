@@ -20,6 +20,7 @@ from .. import database, models
 from ..config import get_data_dir, to_storage_path
 from ..database import get_db
 from ..services import ingestion
+from ..services.book_overview import chapter_generation_state
 
 router = APIRouter(prefix="/books", tags=["books"])
 
@@ -44,28 +45,6 @@ def _chapter_count(book_id: str, db: Session) -> int:
     return db.query(database.Chapter).filter_by(book_id=book_id).count()
 
 
-def _chapter_generation_state(chapter: database.Chapter, db: Session) -> str:
-    """Derive a generation_state string from the chapter's BookSegments.
-
-    Returns: 'none' | 'partial' | 'ready' | 'error'
-    """
-    segments = (
-        db.query(database.BookSegment)
-        .filter_by(chapter_id=chapter.id)
-        .all()
-    )
-    if not segments:
-        return "none"
-    statuses = {s.audio_status for s in segments}
-    if statuses <= {"completed"}:
-        return "ready"
-    if "error" in statuses:
-        return "error"
-    if "completed" in statuses or "generating" in statuses or "pending" in statuses:
-        return "partial"
-    return "none"
-
-
 def _chapter_to_summary(chapter: database.Chapter, db: Session) -> models.ChapterSummary:
     return models.ChapterSummary(
         id=chapter.id,
@@ -73,7 +52,7 @@ def _chapter_to_summary(chapter: database.Chapter, db: Session) -> models.Chapte
         title=chapter.title,
         word_count=chapter.word_count,
         story_id=chapter.story_id,
-        generation_state=_chapter_generation_state(chapter, db),
+        generation_state=chapter_generation_state(chapter.id, db),
     )
 
 

@@ -8,7 +8,6 @@ Covers:
 
 from __future__ import annotations
 
-import asyncio
 import uuid
 
 import pytest
@@ -208,6 +207,19 @@ def test_chapter_generation_state_single_error(temp_db):
     chapter = _seed_chapter_with_segments(temp_db, ["error"])
     result = chapter_generation_state(chapter.id, temp_db)
     assert result == "error", f"Expected 'error', got {result!r}"
+
+
+def test_chapter_generation_state_all_stale(temp_db):
+    """chapter_generation_state returns 'partial' when all segments are 'stale'.
+
+    'stale' is a non-none, non-completed, non-error audio_status introduced in B7.
+    It counts as in-progress work, so the chapter is 'partial', not 'none'.
+    """
+    from backend.services.book_overview import chapter_generation_state
+
+    chapter = _seed_chapter_with_segments(temp_db, ["stale", "stale", "stale"])
+    result = chapter_generation_state(chapter.id, temp_db)
+    assert result == "partial", f"Expected 'partial', got {result!r}"
 
 
 # ---------------------------------------------------------------------------
