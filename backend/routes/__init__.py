@@ -15,6 +15,8 @@ def register_routers(app: FastAPI) -> None:
     from .captures import router as captures_router
     from .stories import router as stories_router
     from .book_analysis import router as book_analysis_router
+    from .book_characters import router as book_characters_router
+    from .book_segments import router as book_segments_router
     from .books import router as books_router
     from .effects import router as effects_router
     from .audio import router as audio_router
@@ -36,6 +38,8 @@ def register_routers(app: FastAPI) -> None:
     app.include_router(captures_router)
     app.include_router(stories_router)
     app.include_router(book_analysis_router)
+    app.include_router(book_characters_router)
+    app.include_router(book_segments_router)
     app.include_router(books_router)
     app.include_router(effects_router)
     app.include_router(audio_router)
