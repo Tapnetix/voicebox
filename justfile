@@ -54,7 +54,7 @@ setup-python:
         {{ pip }} install -r {{ backend_dir }}/requirements-mlx.txt
     fi
     {{ pip }} install git+https://github.com/QwenLM/Qwen3-TTS.git
-    {{ pip }} install pyinstaller ruff pytest pytest-asyncio -q
+    {{ pip }} install pyinstaller ruff pytest pytest-asyncio pytest-cov -q
     echo "Python environment ready."
 
 [windows]
@@ -90,7 +90,7 @@ setup-python:
     & "{{ pip }}" install --no-deps chatterbox-tts
     & "{{ pip }}" install --no-deps hume-tada
     & "{{ pip }}" install git+https://github.com/QwenLM/Qwen3-TTS.git
-    & "{{ pip }}" install pyinstaller ruff pytest pytest-asyncio -q
+    & "{{ pip }}" install pyinstaller ruff pytest pytest-asyncio pytest-cov -q
     Write-Host "Python environment ready."
 
 # Install JavaScript dependencies
@@ -294,6 +294,14 @@ fix-python: _ensure-venv
 # Run Python tests
 test: _ensure-venv
     {{ venv_bin }}/python -m pytest {{ backend_dir }}/tests -v
+
+# Run Python tests with coverage on the audiobook backend modules
+test-coverage: _ensure-venv
+    {{ venv_bin }}/python -m pytest {{ backend_dir }}/tests --cov=backend --cov-report=term
+
+# Run the Playwright browser E2E suite against the web build
+test-e2e:
+    cd {{ app_dir }} && bunx playwright test
 
 # E2E: generate with every TTS model against the frozen binary (pass extra flags like --only kokoro)
 [unix]
