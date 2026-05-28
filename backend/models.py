@@ -2,8 +2,8 @@
 Pydantic models for request/response validation.
 """
 
-from pydantic import BaseModel, Field
-from typing import Optional, List
+from pydantic import BaseModel, ConfigDict, Field
+from typing import Optional, List, Literal
 from datetime import datetime
 
 from .utils.capture_chords import (
@@ -793,3 +793,274 @@ class AvailableEffectsResponse(BaseModel):
     """Response listing all available effect types."""
 
     effects: List[AvailableEffect]
+
+
+# ── Books domain models (contracts 01-03) ─────────────────────────────────
+
+
+class ChapterSummary(BaseModel):
+    """Summary of a single chapter within a book. (Contract 01)"""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    number: int
+    title: str | None = None
+    word_count: int
+    story_id: str | None = None
+    generation_state: str  # none | partial | ready | error
+
+
+class BookResponse(BaseModel):
+    """Book metadata response (list view). (Contract 01)"""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    title: str
+    author: str | None = None
+    source_format: str
+    cover_path: str | None = None
+    status: str
+    chapter_count: int
+    created_at: datetime
+    updated_at: datetime
+
+
+class BookDetailResponse(BookResponse):
+    """Book metadata + chapters list. (Contract 01)"""
+
+    chapters: list[ChapterSummary] = []
+
+
+class ImportOptions(BaseModel):
+    """Optional parameters for the book import multipart upload. (Contract 01)"""
+
+    model_size: Literal["0.6B", "1.7B", "4B"] | None = None
+    narrator_voice_id: str | None = None
+
+
+class AnalyzeRequest(BaseModel):
+    """Request body for POST /books/{book_id}/analyze. (Contract 01)"""
+
+    model_size: Literal["0.6B", "1.7B", "4B"] | None = None
+    narrator_voice_id: str | None = None  # "auto" | profile id
+
+
+class AnalyzeResponse(BaseModel):
+    """Response for POST /books/{book_id}/analyze (202). (Contract 01)"""
+
+    book_id: str
+    task_id: str
+    status: str  # "analyzing"
+
+
+# ── Contract 02: Characters & Segments ────────────────────────────────────
+
+
+class CharacterResponse(BaseModel):
+    """Full character roster entry. (Contract 02)"""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    name: str
+    color: str | None = None
+    profile_id: str | None = None
+    voice_type: str | None = None   # null when unassigned
+    voice_label: str | None = None  # null when unassigned
+    is_library: bool = False
+    is_narrator: bool = False
+    role: str | None = None
+    gender: str | None = None
+    age_range: str | None = None
+    vocal_description: str | None = None
+    archetype: str | None = None
+    dialogue_count: int = 0
+    confidence: float | None = None
+    aliases: list[str] = []
+
+
+class CharacterUpdate(BaseModel):
+    """PATCH body for /books/{book_id}/characters/{char_id}. (Contract 02)"""
+
+    name: str | None = None
+    color: str | None = None
+    profile_id: str | None = None
+    design_prompt: str | None = None
+    preset_voice_id: str | None = None
+    is_narrator: bool | None = None
+
+
+class CharacterMergeRequest(BaseModel):
+    """Body for POST /books/{book_id}/characters/{char_id}/merge. (Contract 02)"""
+
+    source_char_id: str
+
+
+class CharacterSplitRequest(BaseModel):
+    """Body for POST /books/{book_id}/characters/{char_id}/split. (Contract 02)"""
+
+    new_name: str
+    segment_ids: list[str]
+
+
+class SegmentAudio(BaseModel):
+    """Nested audio state on SegmentResponse. (Contract 02)"""
+
+    generation_id: str | None = None
+    status: str = "none"
+    audio_path: str | None = None
+    duration_ms: int | None = None
+
+
+class SegmentResponse(BaseModel):
+    """Ordered segment with inline audio state. (Contract 02)"""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    chapter_id: str
+    character_id: str | None = None
+    character_name: str | None = None
+    type: Literal["narration", "dialogue"]
+    text: str
+    emotion: str | None = None
+    emotion_intensity: float | None = None
+    delivery: str | None = None
+    order: int
+    audio: SegmentAudio
+
+
+class SegmentUpdate(BaseModel):
+    """PATCH body for /segments/{segment_id}. (Contract 02)"""
+
+    character_id: str | None = None
+    emotion: str | None = None
+    emotion_intensity: float | None = None
+    delivery: str | None = None
+    text: str | None = None
+    type: Literal["dialogue", "narration"] | None = None
+
+
+class SegmentSplitRequest(BaseModel):
+    """Body for POST /segments/{segment_id}/split. (Contract 02)"""
+
+    at_offset: int
+
+
+class SegmentsMergeRequest(BaseModel):
+    """Body for POST /segments/merge. (Contract 02)"""
+
+    segment_ids: list[str]
+
+
+class PreviewRequest(BaseModel):
+    """Body for POST /characters/{char_id}/preview. (Contract 02)"""
+
+    text: str | None = None
+    emotion: str | None = None
+    profile_id: str | None = None
+    preset_voice_id: str | None = None
+    design_prompt: str | None = None
+
+
+class PreviewResponse(BaseModel):
+    """Response for POST /characters/{char_id}/preview. (Contract 02)"""
+
+    generation_id: str
+    audio_path: str
+
+
+class VoiceProfileSummary(BaseModel):
+    """Compact voice profile entry for the voice picker. (Contract 02)"""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    name: str
+    voice_type: str
+    is_library: bool = False
+    book_id: str | None = None
+
+
+class VoiceOptionsResponse(BaseModel):
+    """Three-section voice picker payload. (Contract 02)"""
+
+    library: list[VoiceProfileSummary] = []
+    book: list[VoiceProfileSummary] = []
+    presets: list[dict] = []  # PresetVoice shape reused from profiles
+
+
+# ── Contract 03: Generation & Export ──────────────────────────────────────
+
+
+class GenerateRequest(BaseModel):
+    """Optional body for generate / chapter-generate endpoints. (Contract 03)"""
+
+    engine: str | None = None
+    model_size: str | None = None
+    overwrite_errors: bool = False
+
+
+class GenerateResponse(BaseModel):
+    """202 response for generate / chapter-generate. (Contract 03)"""
+
+    book_id: str
+    chapter_id: str | None = None  # omitted for whole-book generate
+    task_id: str
+    queued_segments: int
+
+
+class RegenerateRequest(BaseModel):
+    """Optional body for POST /segments/{segment_id}/regenerate. (Contract 03)"""
+
+    emotion: str | None = None
+    instruct: str | None = None
+    seed: int | None = None
+
+
+class RegenerateResponse(BaseModel):
+    """Response for POST /segments/{segment_id}/regenerate. (Contract 03)"""
+
+    segment_id: str
+    generation_id: str
+    version_id: str
+    status: str
+
+
+class ChapterGenerationStatus(BaseModel):
+    """Per-chapter generation counts within GenerationStatusResponse. (Contract 03)"""
+
+    chapter_id: str
+    total: int
+    completed: int
+    errors: int
+    state: str  # none | partial | ready | error
+
+
+class GenerationStatusResponse(BaseModel):
+    """Response for GET /books/{book_id}/generation-status. (Contract 03)"""
+
+    chapters: list[ChapterGenerationStatus]
+    overall_progress: float  # 0.0 – 1.0
+
+
+class ExportRequest(BaseModel):
+    """Body for POST /books/{book_id}/export. (Contract 03)"""
+
+    format: Literal["m4b", "mp3_single", "mp3_per_chapter"]
+    bitrate: Literal["64k", "128k"] | None = None
+    target_lufs: float | None = None
+    channels: Literal["mono", "stereo"] | None = None
+    title: str | None = None
+    author: str | None = None
+    cover_path: str | None = None
+
+
+class ExportResponse(BaseModel):
+    """202 response for POST /books/{book_id}/export. (Contract 03)"""
+
+    book_id: str
+    task_id: str
+    status: str  # "exporting"
