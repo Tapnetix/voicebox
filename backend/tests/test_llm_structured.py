@@ -55,3 +55,13 @@ async def test_unrecoverable_raises():
     llm = _FakeLLM(["nope", "still nope", "nope again"])
     with pytest.raises(StructuredOutputError):
         await generate_structured("p", Item, backend=llm, max_retries=2)
+    assert llm.calls == 3
+
+
+@pytest.mark.asyncio
+async def test_trailing_prose_stripped_in_one_call():
+    """Balanced extraction must strip trailing prose so no retry is wasted."""
+    llm = _FakeLLM(['{"name":"A","n":1} Hope this helps!'])
+    out = await generate_structured("p", Item, backend=llm)
+    assert out.name == "A" and out.n == 1
+    assert llm.calls == 1

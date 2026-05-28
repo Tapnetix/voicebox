@@ -24,11 +24,41 @@ def _extract_json(text: str) -> str:
     fence = re.search(r"```(?:json)?\s*(.*?)```", text, re.DOTALL)
     if fence:
         text = fence.group(1).strip()
-    # grab first balanced object/array
+    # find the first opening brace/bracket
     start = next((i for i, c in enumerate(text) if c in "{["), None)
     if start is None:
         return text
-    return text[start:].strip()
+    # walk forward tracking nesting depth to find the balanced close
+    opener = text[start]
+    closer = "}" if opener == "{" else "]"
+    depth = 0
+    in_string = False
+    escape_next = False
+    end = None
+    for i in range(start, len(text)):
+        ch = text[i]
+        if escape_next:
+            escape_next = False
+            continue
+        if ch == "\\" and in_string:
+            escape_next = True
+            continue
+        if ch == '"':
+            in_string = not in_string
+            continue
+        if in_string:
+            continue
+        if ch == opener:
+            depth += 1
+        elif ch == closer:
+            depth -= 1
+            if depth == 0:
+                end = i
+                break
+    if end is None:
+        # no balanced close found — fall back to current behaviour
+        return text[start:].strip()
+    return text[start:end + 1]
 
 
 def _repair(text: str) -> str:
