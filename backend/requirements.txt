@@ -70,3 +70,9 @@ sse-starlette>=2.0
 # Utilities
 python-multipart>=0.0.6
 Pillow>=10.0.0
+
+# Ebook ingestion (A5: audiobook import service)
+PyMuPDF>=1.23.0
+ebooklib>=0.18
+lxml>=5.0.0
+chardet>=5.0.0
