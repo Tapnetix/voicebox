@@ -427,26 +427,33 @@ def test_merge_folds_aliases(client, analyzed_book_id, char_a, char_b):
     assert "Ali" in roster[char_a]["aliases"]
 
 
-def test_merge_stale_audio_invalidation(client, analyzed_book_id, char_a, char_b, engine_and_session):
-    """Segments moved with a generation_id get audio_status='stale' after merge."""
-    # char_a has seg_a3 with generation_id — when char_b merges INTO char_a,
-    # char_a's segments don't move (char_b's do). Verify char_a still exists
-    # and the stale seg wasn't touched unless it needed to be.
-    # The real stale test: merge char_a into some other target.
-    # Instead: let's verify by merging char_b (no audio) into char_a and
-    # checking seg_a3 is still OK (only source segments get staleness check).
+def test_merge_stale_audio_invalidation(client, analyzed_book_id, char_a, char_b, seeded, engine_and_session):
+    """Segments moved with a generation_id get audio_status='stale' after merge.
+
+    seg_a3 belongs to char_a and has a generation_id (audio_status='completed').
+    We merge char_a (source) INTO char_b (target), so char_a's segments — including
+    seg_a3 — are moved. After the merge, seg_a3 must have audio_status='stale'.
+    """
     _, TestSession = engine_and_session
+    seg_a3_id = seeded["seg_a3_id"]
+
+    # Merge char_a (source) into char_b (target) so char_a's segments move
     r = client.post(
-        f"/books/{analyzed_book_id}/characters/{char_a}/merge",
-        json={"source_char_id": char_b},
+        f"/books/{analyzed_book_id}/characters/{char_b}/merge",
+        json={"source_char_id": char_a},
     )
-    assert r.status_code == 200
-    # char_b's segments had no generation_id, so they stay "none"
-    # seg_a3 was already "completed" and belongs to char_a (not moved)
+    assert r.status_code == 200, r.text
+
     db = TestSession()
     from backend.database import BookSegment
-    # All segments now belong to char_a; get the char_b segs
-    # (they had audio_status="none" so should stay "none")
+    seg = db.get(BookSegment, seg_a3_id)
+    assert seg is not None, "seg_a3 should still exist after merge"
+    assert seg.audio_status == "stale", (
+        f"Expected audio_status='stale' for moved segment with generation_id, got '{seg.audio_status}'"
+    )
+    assert seg.character_id == char_b, (
+        f"Expected segment to be reassigned to char_b, got character_id='{seg.character_id}'"
+    )
     db.close()
 
 
@@ -596,18 +603,27 @@ def test_delete_reassigns_segments_to_narrator(
 
 
 def test_delete_sets_segments_type_to_narration(
-    client, analyzed_book_id, char_a, engine_and_session
+    client, analyzed_book_id, char_a, seeded, engine_and_session
 ):
-    """DELETE character: reassigned segments get type='narration'."""
+    """DELETE character: reassigned segments get type='narration' and belong to narrator."""
     _, TestSession = engine_and_session
+    narrator_id = seeded["narrator_id"]
+    seg_ids = [seeded["seg_a1_id"], seeded["seg_a2_id"], seeded["seg_a3_id"]]
+
     r = client.delete(f"/books/{analyzed_book_id}/characters/{char_a}")
     assert r.status_code in (200, 204), r.text
 
     db = TestSession()
     from backend.database import BookSegment
-    # All segments originally owned by char_a should now be narration
-    # (We don't have char_a's id anymore from the seeded fixture directly,
-    # but we can check the narrator owns them now)
+    for seg_id in seg_ids:
+        seg = db.get(BookSegment, seg_id)
+        assert seg is not None, f"Segment {seg_id} should still exist after delete"
+        assert seg.type == "narration", (
+            f"Expected type='narration' for reassigned segment {seg_id}, got '{seg.type}'"
+        )
+        assert seg.character_id == narrator_id, (
+            f"Expected character_id=narrator for segment {seg_id}, got '{seg.character_id}'"
+        )
     db.close()
 
 
