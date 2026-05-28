@@ -250,6 +250,9 @@ async def delete_book(
         db.query(database.BookSegment).filter_by(chapter_id=chapter.id).delete()
     db.query(database.Chapter).filter_by(book_id=book_id).delete()
     db.query(database.BookCharacter).filter_by(book_id=book_id).delete()
+    # NULL out VoiceProfile.book_id rather than deleting — auto-cast profiles
+    # should survive as orphaned-from-book voices.
+    db.query(database.VoiceProfile).filter_by(book_id=book_id).update({"book_id": None})
     db.delete(book)
     db.commit()
 
