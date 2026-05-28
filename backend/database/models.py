@@ -44,6 +44,11 @@ class VoiceProfile(Base):
     # cloning metadata above).
     personality = Column(Text, nullable=True)
 
+    # Audiobook mode — a voice auto-cast for a specific book (null for global
+    # voices). is_library flips true once "Save to library" promotes it.
+    book_id = Column(String, ForeignKey("books.id"), nullable=True)
+    is_library = Column(Boolean, nullable=False, default=False)
+
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -278,4 +283,84 @@ class Capture(Base):
     stt_model = Column(String, nullable=True)
     llm_model = Column(String, nullable=True)
     refinement_flags = Column(Text, nullable=True)  # JSON blob
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class Book(Base):
+    """An imported book — the top of the Book → Chapter → BookSegment tree."""
+
+    __tablename__ = "books"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    title = Column(String, nullable=False)
+    author = Column(String, nullable=True)
+    cover_path = Column(String, nullable=True)
+    source_format = Column(String, nullable=False)  # epub | fb2 | txt | pdf
+    # imported | analyzing | analyzed | generating | ready | error
+    status = Column(String, nullable=False, default="imported")
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class Chapter(Base):
+    """One chapter of a book; maps 1:1 to a Story once rendered."""
+
+    __tablename__ = "chapters"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    book_id = Column(String, ForeignKey("books.id"), nullable=False)
+    number = Column(Integer, nullable=False)
+    title = Column(String, nullable=True)
+    raw_text = Column(Text, nullable=False, default="")
+    word_count = Column(Integer, nullable=False, default=0)
+    story_id = Column(String, ForeignKey("stories.id"), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class BookCharacter(Base):
+    """A detected character (or the narrator) bound to a VoiceProfile once cast."""
+
+    __tablename__ = "book_characters"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    book_id = Column(String, ForeignKey("books.id"), nullable=False)
+    profile_id = Column(String, ForeignKey("profiles.id"), nullable=True)
+    name = Column(String, nullable=False)
+    is_narrator = Column(Boolean, nullable=False, default=False)
+    color = Column(String, nullable=True)
+    dialogue_count = Column(Integer, nullable=False, default=0)
+    confidence = Column(Float, nullable=True)
+    aliases = Column(JSON, nullable=False, default=list)
+    role = Column(String, nullable=True)  # major | minor
+    gender = Column(String, nullable=True)
+    age_range = Column(String, nullable=True)
+    vocal_description = Column(Text, nullable=True)
+    archetype = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class BookSegment(Base):
+    """The editable, pre-audio unit — one speaker's utterance or a narration run.
+
+    reassign / split / merge / retype all operate on these rows. ``order``
+    gives the adjacency that split/merge need. Rendering composes
+    emotion + intensity + delivery into the Generation's instruct and stores
+    ``generation_id`` back here.
+    """
+
+    __tablename__ = "book_segments"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    chapter_id = Column(String, ForeignKey("chapters.id"), nullable=False)
+    character_id = Column(String, ForeignKey("book_characters.id"), nullable=True)
+    type = Column(String, nullable=False, default="narration")  # narration | dialogue
+    order = Column(Integer, nullable=False, default=0)
+    text = Column(Text, nullable=False, default="")
+    emotion = Column(String, nullable=True)
+    emotion_intensity = Column(Float, nullable=True)
+    delivery = Column(Text, nullable=True)  # free-text instruct, e.g. "through gritted teeth"
+    flagged = Column(Boolean, nullable=False, default=False)  # low-confidence triage
+    generation_id = Column(String, ForeignKey("generations.id"), nullable=True)
+    # none | pending | generating | completed | error | stale
+    audio_status = Column(String, nullable=False, default="none")
     created_at = Column(DateTime, default=datetime.utcnow)
