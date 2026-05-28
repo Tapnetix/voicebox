@@ -159,6 +159,11 @@ def _migrate_profiles(engine, inspector, tables: set[str]) -> None:
         _add_column(engine, "profiles", "default_engine VARCHAR", "default_engine")
     if "personality" not in columns:
         _add_column(engine, "profiles", "personality TEXT", "personality")
+    # Audiobook mode — book-scoped voice columns (additive, nullable).
+    if "book_id" not in columns:
+        _add_column(engine, "profiles", "book_id VARCHAR", "book_id")
+    if "is_library" not in columns:
+        _add_column(engine, "profiles", "is_library BOOLEAN NOT NULL DEFAULT 0", "is_library")
 
 
 def _migrate_generations(engine, inspector, tables: set[str]) -> None:
