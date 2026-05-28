@@ -13,3 +13,7 @@ def get_llm_model() -> LLMBackend:
 def unload_llm_model() -> None:
     """Unload LLM model to free memory."""
     get_llm_backend().unload_model()
+
+
+# Convenience re-export — must stay at bottom to avoid circular import.
+from .llm_structured import generate_structured  # noqa: E402, F401
