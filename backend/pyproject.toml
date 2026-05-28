@@ -81,3 +81,16 @@ docstring-code-format = true
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+
+# ---------------------------------------------------------------------------
+# coverage (pytest-cov) — audiobook-mode introduces coverage tooling.
+# Scope --cov to touched modules per task; no global fail-under (the legacy
+# backend has no baseline).
+# ---------------------------------------------------------------------------
+[tool.coverage.run]
+source = ["backend"]
+omit = ["backend/tests/*", "backend/build_binary.py"]
+
+[tool.coverage.report]
+show_missing = true
+skip_empty = true
