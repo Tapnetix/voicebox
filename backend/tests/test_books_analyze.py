@@ -325,3 +325,74 @@ async def test_error_flips_status_and_emits_error_event(
 
     error_events = [p for p in seen if p.get("type") == "error"]
     assert len(error_events) >= 1, f"Expected error event; saw: {[p['type'] for p in seen]}"
+
+
+# ---------------------------------------------------------------------------
+# enqueue_analysis entry-point test
+# ---------------------------------------------------------------------------
+
+
+def test_enqueue_analysis_flips_status_and_returns_task_id(
+    engine_and_session, monkeypatch
+):
+    """enqueue_analysis flips book.status to 'analyzing' and returns a non-empty task_id.
+
+    Calls enqueue_analysis directly with:
+    - a real temp DB (seeded with a Book)
+    - task_queue.create_background_task monkeypatched to a no-op (no real pipeline)
+    - database.get_db redirected to the temp TestSession
+    """
+    import backend.database as db_module
+    import backend.services.task_queue as tq_module
+    from backend.services import book_analysis as ba_svc
+
+    _, TestSession = engine_and_session
+
+    # Seed a Book in the temp DB
+    db = TestSession()
+    book = Book(title="Enqueue Test", author="Test", source_format="epub", status="imported")
+    db.add(book)
+    db.commit()
+    db.refresh(book)
+    book_id = book.id
+    db.close()
+
+    # Redirect database.get_db so enqueue_analysis obtains sessions from the temp DB
+    def fake_get_db():
+        session = TestSession()
+        try:
+            yield session
+        finally:
+            session.close()
+
+    monkeypatch.setattr(db_module, "get_db", fake_get_db)
+
+    # Stub out task_queue.create_background_task — return a dummy task object.
+    # Close the coroutine immediately to suppress "coroutine was never awaited" warnings.
+    class _DummyTask:
+        pass
+
+    def _noop_create_background_task(coro):
+        coro.close()
+        return _DummyTask()
+
+    monkeypatch.setattr(tq_module, "create_background_task", _noop_create_background_task)
+
+    # Call the production entry-point
+    task_id = ba_svc.enqueue_analysis(book_id, "1.7B", "auto")
+
+    # Assert: task_id is a non-empty string
+    assert isinstance(task_id, str) and len(task_id) > 0, (
+        f"Expected non-empty task_id string, got {task_id!r}"
+    )
+
+    # Assert: book.status is now "analyzing" in the DB
+    verify_db = TestSession()
+    try:
+        refreshed = verify_db.query(Book).filter_by(id=book_id).first()
+        assert refreshed is not None, "Book disappeared from DB"
+        assert refreshed.status == "analyzing", (
+            f"Expected status='analyzing', got {refreshed.status!r}"
+        )
+    finally:
+        verify_db.close()

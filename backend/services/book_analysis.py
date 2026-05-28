@@ -69,6 +69,9 @@ async def run_analysis_task(
     book_id: str,
     *,
     model_size: str = "1.7B",
+    # narrator_voice_id (auto | profile-id) is reserved for explicit narrator-voice
+    # selection; not yet forwarded to voice_casting.cast_book — see B3. Forwarded
+    # here so the API contract is stable.
     narrator_voice_id: str = "auto",
     db: Session,
 ) -> None:

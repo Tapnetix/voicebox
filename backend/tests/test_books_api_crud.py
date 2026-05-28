@@ -251,9 +251,13 @@ def test_analyze_returns_202(client_with_analysis):
     assert body["status"] == "analyzing"
 
 
-def test_analyze_unknown_book_404(client):
-    """POST /books/{id}/analyze with unknown id returns 404."""
-    r = client.post(f"/books/{uuid.uuid4()}/analyze")
+def test_analyze_unknown_book_404(client_with_analysis):
+    """POST /books/{id}/analyze with unknown id returns 404.
+
+    Uses client_with_analysis (which registers the real book_analysis_router) so
+    the assertion exercises the handler's real 404, not a FastAPI route-not-found.
+    """
+    r = client_with_analysis.post(f"/books/{uuid.uuid4()}/analyze")
     assert r.status_code == 404
 
 
