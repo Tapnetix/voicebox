@@ -133,6 +133,32 @@ def test_already_cast_characters_skipped(db):
     assert chars[0].profile_id == original_profile_id
 
 
+def test_narrator_gets_designed_voice(db):
+    """A character with is_narrator=True receives a designed profile regardless of role."""
+    book = Book(title="Narrator Test", source_format="epub", status="analyzed")
+    db.add(book)
+    db.flush()
+    narrator = BookCharacter(
+        book_id=book.id,
+        name="Narrator",
+        role="minor",
+        is_narrator=True,
+        dialogue_count=0,
+    )
+    db.add(narrator)
+    db.commit()
+    voice_casting.cast_book(book.id, cooccurrence=set(), language="en", db=db)
+    db.refresh(narrator)
+    prof = db.get(VoiceProfile, narrator.profile_id)
+    assert prof.voice_type == "designed"
+
+
+def test_invalid_book_id_raises_value_error(db):
+    """cast_book raises ValueError when the book_id does not exist."""
+    with pytest.raises(ValueError):
+        voice_casting.cast_book("nonexistent-id", cooccurrence=set(), language="en", db=db)
+
+
 def test_preset_pool_exhaustion_falls_back_to_designed(db, monkeypatch):
     """When preset pool is exhausted for co-occurring speakers, fall back to designed."""
     # Make only 1 preset available but need 2 non-colliding minors co-occurring
