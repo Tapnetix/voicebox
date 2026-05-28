@@ -10,10 +10,10 @@ import or modify routes/__init__.py.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from ..database import BookSegment, get_db
+from ..database import BookSegment, Chapter, get_db
 from ..models import SegmentResponse, SegmentUpdate
 from ..services.book_segments import segment_to_response, update_segment
 
@@ -29,7 +29,13 @@ def list_segments(
     chapter_id: str,
     db: Session = Depends(get_db),
 ) -> list[SegmentResponse]:
-    """Return all segments for a chapter, ordered by `order` ascending."""
+    """Return all segments for a chapter, ordered by `order` ascending.
+
+    Returns 404 if the chapter does not exist or does not belong to book_id.
+    """
+    chapter = db.query(Chapter).filter_by(id=chapter_id, book_id=book_id).first()
+    if chapter is None:
+        raise HTTPException(status_code=404, detail="Chapter not found for this book")
     segments = (
         db.query(BookSegment)
         .filter_by(chapter_id=chapter_id)

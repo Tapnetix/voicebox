@@ -397,3 +397,34 @@ def test_list_unknown_book_or_chapter_returns_empty_or_404(client):
     assert r.status_code in (200, 404)
     if r.status_code == 200:
         assert r.json() == []
+
+
+def test_list_segments_wrong_book_id_returns_404(client, seeded):
+    """GET /books/{wrong_book_id}/chapters/{chapter_id}/segments returns 404.
+
+    The chapter exists but belongs to a different book — the endpoint must
+    validate the book_id ownership and refuse with 404.
+    """
+    chapter_id = seeded["chapter_id"]
+    wrong_book_id = "not-the-right-book"
+    r = client.get(f"/books/{wrong_book_id}/chapters/{chapter_id}/segments")
+    assert r.status_code == 404, r.text
+
+
+def test_change_delivery_invalidates_audio(client, seeded):
+    """PATCH a generated segment's delivery field sets audio status to 'stale'.
+
+    The delivery update path in update_segment must mark the segment stale
+    when it already has a generation_id.
+    """
+    generated_segment_id = seeded["generated_seg_id"]
+    r = client.patch(
+        f"/segments/{generated_segment_id}",
+        json={"delivery": "through gritted teeth"},
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["audio"]["status"] == "stale", (
+        f"Expected 'stale' but got '{body['audio']['status']}'"
+    )
+    assert body["delivery"] == "through gritted teeth"
