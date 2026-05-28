@@ -10,6 +10,17 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
+from lxml import etree
+
+# Hardened XML parser: disallows entity resolution, DTD loading, and network access.
+# Mitigates XXE (XML External Entity) file-disclosure and SSRF attacks when parsing
+# untrusted uploaded ebook files.
+_FB2_PARSER = etree.XMLParser(
+    resolve_entities=False,
+    no_network=True,
+    load_dtd=False,
+    huge_tree=False,
+)
 
 
 class IngestionError(Exception):
@@ -178,10 +189,25 @@ def _parse_epub(path: str) -> ParsedBook:
         if cover_item is not None:
             cover_bytes = cover_item.get_content()
 
-    # Chapters — iterate document items in spine order
+    # Chapters — iterate document items, skipping navigation documents.
+    # EpubNav items have get_type() == ITEM_NAVIGATION; however, ebooklib sometimes
+    # reports them as ITEM_DOCUMENT after a round-trip.  Filtering by the class type
+    # or by file name containing "nav" is more reliable.
+    from ebooklib.epub import EpubNav  # noqa: PLC0415
+
     chapters: list[ParsedChapter] = []
     chapter_num = 0
     for item in book.get_items_of_type(ebooklib.ITEM_DOCUMENT):
+        # Skip navigation/TOC documents — they are structural metadata, not content.
+        if isinstance(item, EpubNav):
+            continue
+        if item.get_type() == ebooklib.ITEM_NAVIGATION:
+            continue
+        # Guard against nav items that survived the class/type check (e.g. name heuristic)
+        item_name = item.get_name().lower()
+        if "nav" in item_name and item_name.endswith((".xhtml", ".html", ".htm")):
+            continue
+
         raw_content = item.get_content()
         if not raw_content:
             continue
@@ -226,10 +252,8 @@ def _fb2_text(elem) -> str:
 
 
 def _parse_fb2(path: str) -> ParsedBook:
-    from lxml import etree
-
     try:
-        tree = etree.parse(path)
+        tree = etree.parse(path, _FB2_PARSER)
     except Exception as exc:
         raise IngestionError(f"Cannot parse FB2 XML: {exc}") from exc
 
