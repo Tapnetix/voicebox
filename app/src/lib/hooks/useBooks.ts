@@ -358,6 +358,23 @@ export function useRegenerateSegment() {
   });
 }
 
+/**
+ * Preview a single segment by regenerating its audio on-the-fly (non-destructive).
+ * Uses the regenerate endpoint — the caller should not overwrite the stored version.
+ * The result's audio_path can be played directly; no query invalidation is needed.
+ */
+export function usePreviewSegment() {
+  return useMutation({
+    mutationFn: ({
+      segmentId,
+      data,
+    }: {
+      segmentId: string;
+      data?: RegenerateSegmentRequest;
+    }) => apiClient.regenerateSegment(segmentId, data),
+  });
+}
+
 // ─── Generation mutations ─────────────────────────────────────────────────────
 
 export function useGenerateChapter() {
