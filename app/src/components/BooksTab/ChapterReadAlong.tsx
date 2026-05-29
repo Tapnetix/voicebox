@@ -6,8 +6,9 @@
  * Story's items. Updates booksStore.setCurrentSpokenSegment so the matching
  * seg-{id} span can render its ♪ highlight.
  *
- * Does NOT own its own audio engine — drives off the existing storyStore /
- * useStoryPlayback timing that is already wired by the AppFrame.
+ * Does NOT own its own audio engine — the requestAnimationFrame clock that
+ * advances storyStore.currentTimeMs is driven by useStoryPlayback, which is
+ * mounted unconditionally at the top level of ChapterEditor.
  *
  * data-testid: none (headless observer — no DOM output)
  */
@@ -76,7 +77,10 @@ export function ChapterReadAlong({ story, segments }: ChapterReadAlongProps) {
     }
   }, [currentTimeMs, story, segments, setCurrentSpokenSegment]);
 
-  // Scroll the active segment into view
+  // Scroll the active segment into view whenever the playback time changes.
+  // NOTE: We key on currentTimeMs (a reactive value) rather than
+  // lastSegmentIdRef.current (a ref) because React does not track ref
+  // mutations — a dep on the ref value never re-triggers the effect.
   useEffect(() => {
     if (!lastSegmentIdRef.current) return;
     const el = document.querySelector(
@@ -85,7 +89,7 @@ export function ChapterReadAlong({ story, segments }: ChapterReadAlongProps) {
     if (el && typeof (el as HTMLElement).scrollIntoView === 'function') {
       (el as HTMLElement).scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
-  }, [lastSegmentIdRef.current]);
+  }, [currentTimeMs]);
 
   // This component renders nothing — it is a headless observer
   return null;

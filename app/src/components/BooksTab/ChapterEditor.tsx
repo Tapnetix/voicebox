@@ -38,6 +38,7 @@ import { useBooksStore } from '@/stores/booksStore';
 import { useStoryStore } from '@/stores/storyStore';
 import { useStory } from '@/lib/hooks/useStories';
 import { useBook } from '@/lib/hooks/useBooks';
+import { useStoryPlayback } from '@/lib/hooks/useStoryPlayback';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -762,6 +763,17 @@ export function ChapterEditor() {
   // storyStore actions for starting/stopping playback
   const storyPlay = useStoryStore((s) => s.play);
   const storyPause = useStoryStore((s) => s.pause);
+
+  // ── D5: Drive the Web Audio clock for the chapter's story while read-along is active.
+  // useStoryPlayback owns the requestAnimationFrame loop that advances
+  // storyStore.currentTimeMs — without this call on the /books route,
+  // isPlaying flips true but the clock stays frozen and the highlight never moves.
+  // Pass items only when read-along is active so the hook is inert otherwise.
+  const readAlongItems =
+    readAlongPlaying && chapterStory?.items
+      ? [...chapterStory.items].sort((a, b) => a.start_time_ms - b.start_time_ms)
+      : undefined;
+  useStoryPlayback(readAlongItems);
 
   const [filterMode, setFilterMode] = useState<FilterMode>('all');
   const [byCharacterId, setByCharacterId] = useState<string | null>(null);

@@ -13,6 +13,7 @@ import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { ChapterEditor } from '@/components/BooksTab/ChapterEditor';
+import { useStoryPlayback } from '@/lib/hooks/useStoryPlayback';
 
 // ─── Mock state buckets ────────────────────────────────────────────────────────
 
@@ -285,5 +286,43 @@ describe('ChapterEditor — read-along D5', () => {
       }),
       expect.anything(),
     );
+  });
+
+  it('useStoryPlayback is called with the chapter story items when read-along is active', () => {
+    // This locks in the wiring: the Web Audio rAF clock that advances
+    // currentTimeMs MUST be mounted in ChapterEditor on the /books route.
+    // Without this call, isPlaying flips but currentTimeMs stays frozen at 0.
+    mockReadAlongPlaying = true;
+    render(<ChapterEditor />);
+
+    const spy = vi.mocked(useStoryPlayback);
+    expect(spy).toHaveBeenCalled();
+
+    // When read-along is active the hook must receive the sorted story items
+    // (the chapter's items sorted by start_time_ms) so the audio engine can
+    // preload buffers and advance the playhead.
+    const calls = spy.mock.calls;
+    const activeCall = calls.find((args) => Array.isArray(args[0]) && args[0].length > 0);
+    expect(activeCall).toBeDefined();
+    // The items passed must include the generation_ids that match our segments
+    const passedItems = activeCall![0] as { generation_id: string }[];
+    const genIds = passedItems.map((it) => it.generation_id);
+    expect(genIds).toContain('g12');
+    expect(genIds).toContain('g13');
+  });
+
+  it('useStoryPlayback is called with undefined when read-along is NOT active (hook stays inert)', () => {
+    // When read-along is off the hook receives undefined so no audio
+    // buffers are preloaded and the rAF loop does not run.
+    mockReadAlongPlaying = false;
+    render(<ChapterEditor />);
+
+    const spy = vi.mocked(useStoryPlayback);
+    expect(spy).toHaveBeenCalled();
+    // Every call should have passed undefined (no active items)
+    const calls = spy.mock.calls;
+    for (const args of calls) {
+      expect(args[0]).toBeUndefined();
+    }
   });
 });
