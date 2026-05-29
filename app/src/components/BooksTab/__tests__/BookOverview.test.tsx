@@ -24,6 +24,32 @@ vi.mock('@/stores/booksStore', () => ({
 const mockMerge = vi.fn().mockResolvedValue(undefined);
 const mockDelete = vi.fn().mockResolvedValue(undefined);
 
+// Mutable character list — tests can swap this to control what useCharacters returns
+let mockCharacters = [
+  {
+    id: 'n',
+    name: 'Narrator',
+    is_narrator: true,
+    color: '#6d8bff',
+    dialogue_count: 0,
+    confidence: 1,
+    voice_type: 'designed',
+    role: undefined,
+    aliases: [],
+  },
+  {
+    id: 'm',
+    name: 'Mira',
+    is_narrator: false,
+    role: 'major',
+    color: '#34d399',
+    dialogue_count: 142,
+    confidence: 0.9,
+    voice_type: 'designed',
+    aliases: [],
+  },
+];
+
 vi.mock('@/lib/hooks/useBooks', () => ({
   useBook: () => ({
     data: {
@@ -43,30 +69,7 @@ vi.mock('@/lib/hooks/useBooks', () => ({
     isLoading: false,
   }),
   useCharacters: () => ({
-    data: [
-      {
-        id: 'n',
-        name: 'Narrator',
-        is_narrator: true,
-        color: '#6d8bff',
-        dialogue_count: 0,
-        confidence: 1,
-        voice_type: 'designed',
-        role: undefined,
-        aliases: [],
-      },
-      {
-        id: 'm',
-        name: 'Mira',
-        is_narrator: false,
-        role: 'major',
-        color: '#34d399',
-        dialogue_count: 142,
-        confidence: 0.9,
-        voice_type: 'designed',
-        aliases: [],
-      },
-    ],
+    data: mockCharacters,
     isLoading: false,
   }),
   useMergeCharacter: () => ({
@@ -83,9 +86,37 @@ const wrap = (ui: React.ReactNode) => (
   <QueryClientProvider client={new QueryClient()}>{ui}</QueryClientProvider>
 );
 
+// Default character list (1 narrator + 1 non-narrator)
+const defaultCharacters = [
+  {
+    id: 'n',
+    name: 'Narrator',
+    is_narrator: true,
+    color: '#6d8bff',
+    dialogue_count: 0,
+    confidence: 1,
+    voice_type: 'designed',
+    role: undefined,
+    aliases: [],
+  },
+  {
+    id: 'm',
+    name: 'Mira',
+    is_narrator: false,
+    role: 'major',
+    color: '#34d399',
+    dialogue_count: 142,
+    confidence: 0.9,
+    voice_type: 'designed',
+    aliases: [],
+  },
+];
+
 describe('BookOverview', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // Reset to default fixture (1 narrator + 1 non-narrator)
+    mockCharacters = [...defaultCharacters];
   });
 
   // ── Book header ──────────────────────────────────────────────────────────
@@ -204,16 +235,82 @@ describe('BookOverview', () => {
     expect(deleteBtn).toBeDisabled();
   });
 
-  it('merge-btn enables when 2+ non-narrator characters are selected', () => {
-    // Add a second non-narrator character via modified mock - test the UI state
+  it('merge-btn disabled with only 1 selected', () => {
     render(wrap(<BookOverview />));
-    // Select Mira
+    // Select Mira (only non-narrator in default fixture)
     const roster = screen.getByTestId('cast-roster');
     const checkboxes = within(roster).getAllByRole('checkbox');
     expect(checkboxes.length).toBeGreaterThanOrEqual(1);
     fireEvent.click(checkboxes[0]);
     // With only 1 selected, merge should still be disabled
     expect(screen.getByTestId('merge-btn')).toBeDisabled();
+  });
+
+  it('merge-btn enables when 2+ non-narrator characters are selected, and calls useMergeCharacter with correct survivor + source args', async () => {
+    // Override fixture to have 2 non-narrator characters
+    mockCharacters = [
+      {
+        id: 'n',
+        name: 'Narrator',
+        is_narrator: true,
+        color: '#6d8bff',
+        dialogue_count: 0,
+        confidence: 1,
+        voice_type: 'designed',
+        role: undefined,
+        aliases: [],
+      },
+      {
+        id: 'm',
+        name: 'Mira',
+        is_narrator: false,
+        role: 'major',
+        color: '#34d399',
+        dialogue_count: 142,
+        confidence: 0.9,
+        voice_type: 'designed',
+        aliases: [],
+      },
+      {
+        id: 'j',
+        name: 'Juliette',
+        is_narrator: false,
+        role: 'major',
+        color: '#f59e0b',
+        dialogue_count: 98,
+        confidence: 0.85,
+        voice_type: 'designed',
+        aliases: [],
+      },
+    ];
+
+    render(wrap(<BookOverview />));
+    const roster = screen.getByTestId('cast-roster');
+    const checkboxes = within(roster).getAllByRole('checkbox');
+    // Should have 2 checkboxes (Mira + Juliette); Narrator has none
+    expect(checkboxes).toHaveLength(2);
+
+    // Select both non-narrator characters
+    fireEvent.click(checkboxes[0]); // Mira (id: 'm')
+    fireEvent.click(checkboxes[1]); // Juliette (id: 'j')
+
+    // merge-btn should now be enabled
+    const mergeBtn = screen.getByTestId('merge-btn');
+    expect(mergeBtn).not.toBeDisabled();
+
+    // Click merge
+    fireEvent.click(mergeBtn);
+
+    // useMergeCharacter.mutateAsync should be called once (1 source merging into survivor)
+    // Survivor is the first selected (m), source is the second (j)
+    await waitFor(() => {
+      expect(mockMerge).toHaveBeenCalledTimes(1);
+      expect(mockMerge).toHaveBeenCalledWith({
+        bookId: 'b1',
+        charId: 'm',
+        data: { source_char_id: 'j' },
+      });
+    });
   });
 
   it('delete-btn enables when exactly 1 non-narrator character is selected', () => {

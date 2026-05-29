@@ -155,6 +155,12 @@ function ChapterRow({ chapter, index, onEdit }: ChapterRowProps) {
   const { t } = useTranslation();
   const rowNum = index + 1;
 
+  // NOTE: % dialogue column is intentionally deferred.
+  // The B5 API type (ChapterSummary) has no `dialogue_pct` field — only
+  // `dialogue_count` (a line count, not a word-level percentage). Rendering
+  // a fake number here would be misleading. If a future B5 update adds
+  // `dialogue_pct`, guard the cell as: `chapter.dialogue_pct != null && (…)`.
+
   return (
     <div className="flex items-center justify-between py-2 px-1 rounded hover:bg-accent/40 transition-colors">
       <div>
