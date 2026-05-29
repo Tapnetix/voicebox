@@ -438,16 +438,17 @@ describe('BookOverview', () => {
   });
 
   it('generate-chapter button is disabled while that chapter is generating', async () => {
+    // Keep the generate mutation pending so the chapter stays in the in-flight
+    // set (the finally-clause that re-enables the button never runs).
+    mockGenerateChapter.mockReturnValueOnce(new Promise(() => {}));
     render(wrap(<BookOverview />));
     const btn1 = screen.getByTestId('generate-chapter-1');
-    // Click to trigger generation
+    expect(btn1).not.toBeDisabled();
+    // Click to trigger generation — the row is marked in-flight synchronously.
     fireEvent.click(btn1);
-    // Button should be disabled while pending
+    // While the mutation is pending the button must be disabled.
     await waitFor(() => {
-      // After clicking, the component tracks that c1 is generating
-      // The button's disabled state depends on the pending tracking
-      // We check the button is disabled when generation is in-flight
-      expect(btn1).toBeInTheDocument();
+      expect(btn1).toBeDisabled();
     });
   });
 });

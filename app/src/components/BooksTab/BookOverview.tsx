@@ -363,8 +363,12 @@ export function BookOverview() {
     try {
       await generateChapter.mutateAsync({ bookId: selectedBookId, chapterId });
     } catch (err: unknown) {
-      // Surface 409 gracefully — book already generating
-      const status = (err as { status?: number })?.status;
+      // Surface 409 gracefully — book already generating.
+      // apiClient throws plain Error with message like "HTTP error! status: 409",
+      // so we parse the status code out of the message text.
+      const message = err instanceof Error ? err.message : String(err);
+      const statusMatch = message.match(/status:\s*(\d+)/);
+      const status = statusMatch ? parseInt(statusMatch[1], 10) : undefined;
       if (status === 409) {
         toast({
           title: t('books.overview.toast.alreadyGenerating', { defaultValue: 'Already generating' }),
@@ -374,7 +378,6 @@ export function BookOverview() {
           variant: 'destructive',
         });
       } else {
-        const message = err instanceof Error ? err.message : String(err);
         toast({
           title: t('books.overview.toast.generateFailed', { defaultValue: 'Generate failed' }),
           description: message,

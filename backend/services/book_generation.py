@@ -99,7 +99,6 @@ async def _generation_with_completion_hook(
     """
     from .. import database
     from . import book_events
-    from .book_overview import chapter_generation_state
 
     try:
         await inner_coro
@@ -118,27 +117,34 @@ async def _generation_with_completion_hook(
                 .all()
             )
 
-            total_segments_all = 0
-            total_completed_all = 0
-
+            # Pre-compute book-wide totals so overall_progress is correct for
+            # every chapter event (Fix 3: early complete chapter must not
+            # report 1.0 when later chapters are unstarted).
+            chapter_segments: dict[str, list] = {}
+            book_total = 0
+            book_completed = 0
             for chapter in chapters:
-                segments = (
+                segs = (
                     db.query(database.BookSegment)
                     .filter_by(chapter_id=chapter.id)
                     .all()
                 )
+                chapter_segments[chapter.id] = segs
+                book_total += len(segs)
+                book_completed += sum(1 for s in segs if s.audio_status == "completed")
+
+            overall_progress = book_completed / book_total if book_total > 0 else 0.0
+
+            # Track which chapters already had generation_complete published in
+            # this invocation to avoid re-emitting for already-settled chapters
+            # as other segments from other chapters finish (Fix 2).
+            published_complete_ids: set[str] = set()
+
+            for chapter in chapters:
+                segments = chapter_segments[chapter.id]
                 total = len(segments)
                 completed = sum(1 for s in segments if s.audio_status == "completed")
                 errors = sum(1 for s in segments if s.audio_status == "error")
-
-                total_segments_all += total
-                total_completed_all += completed
-
-                overall_progress = (
-                    total_completed_all / total_segments_all
-                    if total_segments_all > 0
-                    else 0.0
-                )
 
                 book_events.publish(
                     book_id,
@@ -152,12 +158,13 @@ async def _generation_with_completion_hook(
                     },
                 )
 
-                # Publish generation_complete when this chapter's segments have all
-                # settled (no more pending/generating in this chapter).
+                # Publish generation_complete once per chapter, only at the
+                # moment that chapter's segments all settle (Fix 2).
                 chapter_in_flight = sum(
                     1 for s in segments if s.audio_status in {"pending", "generating"}
                 )
-                if chapter_in_flight == 0:
+                if chapter_in_flight == 0 and chapter.id not in published_complete_ids:
+                    published_complete_ids.add(chapter.id)
                     book_events.publish(
                         book_id,
                         {

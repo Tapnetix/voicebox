@@ -310,8 +310,11 @@ def test_generation_complete_event_published_when_chapter_done(
         be.publish = original_publish
 
     complete_events = [p for _, p in published if p.get("type") == "generation_complete"]
-    assert len(complete_events) >= 1, (
-        f"Expected at least 1 generation_complete event; got {published!r}"
+    # Exactly one generation_complete per chapter — the published_complete_ids
+    # guard must prevent a settled chapter from re-emitting on subsequent hook
+    # invocations (one chapter here → exactly one complete event).
+    assert len(complete_events) == 1, (
+        f"Expected exactly 1 generation_complete event; got {published!r}"
     )
     ev = complete_events[0]
     # chapter_id is optional in spec but we emit it
