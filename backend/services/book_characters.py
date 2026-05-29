@@ -332,6 +332,7 @@ async def preview_character_voice(
     preset_voice_id: Optional[str] = None,
     design_prompt: Optional[str] = None,
     emotion: Optional[str] = None,
+    instruct: Optional[str] = None,
 ) -> dict:
     """Synthesize a short preview clip through the serial TTS queue.
 
@@ -355,9 +356,10 @@ async def preview_character_voice(
     preview_text = text or _PREVIEW_TEXT
     generation_id = str(uuid.uuid4())
 
-    # Build instruct from emotion if provided
-    instruct: Optional[str] = None
-    if emotion:
+    # A verbatim instruct (e.g. composed by the book pipeline's compose_instruct,
+    # so preview matches what generation will render) takes precedence; otherwise
+    # wrap a bare emotion as a tone hint.
+    if instruct is None and emotion:
         instruct = f"Speak with a {emotion} tone."
 
     # For ephemeral candidate previews (preset/designed without a real profile),

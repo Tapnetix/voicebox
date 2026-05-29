@@ -125,11 +125,16 @@ export function SegmentDeliveryControl({
   }
 
   function handlePreview() {
+    // Send only the emotion override; emotion_intensity + delivery are already
+    // persisted on the segment (PATCHed on change above), and the backend
+    // composes the instruct via the same compose_instruct() generation uses, so
+    // the auditioned clip matches what will be rendered. (Do NOT send the raw
+    // delivery as `instruct` — that is a full verbatim override that would
+    // bypass intensity/emotion composition.)
     previewMutate({
       segmentId,
       data: {
         emotion: localEmotion,
-        instruct: localDelivery || undefined,
       },
     });
   }

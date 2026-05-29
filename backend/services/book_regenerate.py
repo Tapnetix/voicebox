@@ -248,30 +248,33 @@ async def preview_segment(
             status_code=409, detail="Segment has no assigned character"
         )
 
-    # Resolve the emotion to pass to preview_character_voice.
-    # The preview_character_voice function's emotion parameter causes it to
-    # prepend "Speak with a {emotion} tone." to the instruct; we use
-    # the segment's emotion (or caller override) to drive the preview voice.
-    effective_emotion: Optional[str]
-    if instruct is not None:
-        # Full instruct override: skip emotion-based compose; pass instruct
-        # directly as emotion (preview_character_voice wraps it as a tone hint).
-        effective_emotion = instruct
-    elif emotion is not None:
-        effective_emotion = emotion
-    else:
-        # Use segment's current emotion setting
-        effective_emotion = segment.emotion
+    # Compose the TTS instruct EXACTLY as generation/regenerate do (D1
+    # compose_instruct), so the auditioned preview matches what will actually
+    # be rendered (folding emotion + emotion_intensity + delivery). A full
+    # instruct override wins; an emotion override is applied via the same proxy
+    # the regenerate path uses (preserving the segment's intensity + delivery);
+    # otherwise the segment's stored fields are composed.
+    from .book_generation import compose_instruct
 
-    # Delegate to the existing non-destructive character preview path.
-    # This creates a transient Generation row + audio file but does NOT
-    # touch BookSegment.audio_status or create a GenerationVersion on the
-    # segment's existing Generation.
+    if instruct is not None:
+        effective_instruct = instruct
+    elif emotion is not None:
+        effective_instruct = compose_instruct(
+            _SegmentProxy(segment, emotion_override=emotion)
+        )
+    else:
+        effective_instruct = compose_instruct(segment)
+
+    # Delegate to the non-destructive character preview path, passing the
+    # composed instruct VERBATIM (not as a bare emotion that gets re-wrapped as
+    # "Speak with a … tone."). This creates a transient Generation row + audio
+    # file but does NOT touch BookSegment.audio_status or create/promote a
+    # GenerationVersion on the segment's existing Generation.
     result = await preview_character_voice(
         char_id=segment.character_id,
         text=segment.text,
         db=db,
-        emotion=effective_emotion,
+        instruct=effective_instruct,
     )
     return result
 

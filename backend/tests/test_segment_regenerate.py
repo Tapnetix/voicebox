@@ -748,7 +748,7 @@ def test_preview_segment_is_non_destructive(temp_db, generated_book, monkeypatch
         .id
     )
 
-    async def fake_preview_character_voice(char_id, text, db, emotion=None):
+    async def fake_preview_character_voice(char_id, text, db, *, instruct=None, emotion=None, **kw):
         # mirror the real preview_character_voice return shape
         return {"generation_id": "preview-tmp", "audio_path": "generations/preview_tmp.wav"}
 
@@ -788,3 +788,38 @@ def test_preview_segment_unknown_returns_404(temp_db):
     with pytest.raises(HTTPException) as exc:
         asyncio.run(book_regenerate.preview_segment("does-not-exist", db=temp_db))
     assert exc.value.status_code == 404
+
+
+def test_preview_instruct_matches_generation_compose_instruct(temp_db, generated_book, monkeypatch):
+    """The instruct the preview path feeds the TTS engine must equal what
+    generation/regenerate compose via compose_instruct — so the auditioned
+    clip matches what gets rendered (cross-phase D4↔D1/D3 seam)."""
+    from backend.services import book_regenerate
+    from backend.services.book_generation import compose_instruct
+    import backend.services.book_characters as book_characters_mod
+    from backend.database import BookSegment
+
+    seg1_id = generated_book["seg1_id"]
+    seg = temp_db.query(BookSegment).filter_by(id=seg1_id).first()
+    expected = compose_instruct(seg)  # seg1: emotion='calm', intensity=0.5, delivery='slowly'
+
+    captured = {}
+
+    async def fake_preview_character_voice(char_id, text, db, *, instruct=None, emotion=None, **kw):
+        captured["instruct"] = instruct
+        captured["emotion"] = emotion
+        return {"generation_id": "preview-tmp", "audio_path": "generations/preview_tmp.wav"}
+
+    monkeypatch.setattr(
+        book_characters_mod, "preview_character_voice", fake_preview_character_voice
+    )
+
+    # No override → preview composes from the segment's stored fields.
+    asyncio.run(book_regenerate.preview_segment(seg1_id, db=temp_db))
+    assert captured["instruct"] == expected, (
+        f"preview instruct {captured['instruct']!r} must match generation "
+        f"compose_instruct {expected!r}"
+    )
+    # And it must NOT be the old mangled 'Speak with a … tone.' wrapping.
+    assert "Speak with a" not in (captured["instruct"] or "")
+    assert captured["emotion"] is None  # composed instruct passed verbatim, not as emotion

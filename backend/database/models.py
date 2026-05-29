@@ -296,7 +296,9 @@ class Book(Base):
     author = Column(String, nullable=True)
     cover_path = Column(String, nullable=True)
     source_format = Column(String, nullable=False)  # epub | fb2 | txt | pdf
-    # imported | analyzing | analyzed | generating | ready | error
+    # imported | analyzing | analyzed | generating | exporting | ready | error
+    # ('ready' is set after a successful export; generation drains back to
+    # 'analyzed'. Export gates on rendered-segment count, not on this status.)
     status = Column(String, nullable=False, default="imported")
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
