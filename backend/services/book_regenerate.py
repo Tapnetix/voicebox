@@ -246,10 +246,13 @@ async def _regenerate_with_completion_hook(
                 segment.audio_status = "completed" if success else "error"
                 db.commit()
 
-            if success:
-                # Promote the new version to default
-                from . import versions as versions_mod
-                versions_mod.set_default_version(version_id, db)
+            # NOTE: set_default_version is NOT called here.  _save_regenerate
+            # in generation.py already updates the placeholder version's
+            # audio_path in-place and promotes it to default via
+            # set_default_version before this hook runs.  Calling it again here
+            # would re-promote the placeholder *after* _save_regenerate may have
+            # already set a different version as default, causing the regression
+            # described in D3 Fix 1.
         except Exception:
             logger.exception(
                 "Completion hook failed for segment %s version %s",

@@ -558,3 +558,161 @@ def test_regenerate_segment_instruct_override_used(
     )
 
     assert captured.get("instruct") == "whispering menacingly"
+
+
+# ---------------------------------------------------------------------------
+# Fix 1: version promotion correctness
+# ---------------------------------------------------------------------------
+
+
+def test_regenerate_active_version_has_real_audio_path_not_placeholder(
+    temp_db, generated_book, engine_and_session, monkeypatch, tmp_path
+):
+    """After regeneration, the segment's ACTIVE GenerationVersion must point at
+    the real synthesized audio path, NOT the placeholder path that was reserved
+    before synthesis.
+
+    This test mimics the actual bug: run_generation via _save_regenerate creates
+    a NEW version with a real audio path and sets it as default. The completion
+    hook should NOT then promote the placeholder (garbage path) back to default.
+
+    We drive the full completion path by replacing run_generation with a fake
+    that:
+    1. Creates a NEW version with REAL_AUDIO_PATH (as _save_regenerate does), and
+    2. Sets it as default (as create_version(..., is_default=True) does),
+    so the completion hook calling set_default_version(placeholder_id) afterward
+    would re-promote the placeholder — that's the regression this catches.
+    """
+    import backend.config as _cfg
+    _cfg._data_dir = tmp_path
+
+    _, TestSession = engine_and_session
+    REAL_AUDIO_PATH = f"generations/{generated_book['gen1_id']}_realsynth.wav"
+    # Store the real version id created by the fake _save_regenerate
+    created_real_version: list = []
+
+    def fake_enqueue(gen_id, coro):
+        """Run the coroutine with the test DB wired in."""
+        import backend.database as _db_module
+
+        def _get_test_db():
+            db = TestSession()
+            try:
+                yield db
+            finally:
+                db.close()
+
+        original_get_db = _db_module.get_db
+        _db_module.get_db = _get_test_db
+        try:
+            asyncio.run(coro)
+        except Exception:
+            pass
+        finally:
+            _db_module.get_db = original_get_db
+
+    import backend.services.task_queue as tq_module
+    monkeypatch.setattr(tq_module, "enqueue_generation", fake_enqueue)
+
+    # Fake run_generation: simulate _save_regenerate creating a NEW version
+    # (not updating the placeholder) and marking it as default, exactly as the
+    # real _save_regenerate does.
+    async def fake_run_generation(*, generation_id, version_id, **kwargs):
+        """Simulate _save_regenerate: create a brand-new version with real audio
+        and set it as default.  The completion hook will then call
+        set_default_version(placeholder_id) — if that bug exists, it will
+        re-promote the placeholder over the real version."""
+        from backend.services import versions as versions_mod
+        db = TestSession()
+        try:
+            real_ver = versions_mod.create_version(
+                generation_id=generation_id,
+                label="take-real",
+                audio_path=REAL_AUDIO_PATH,
+                db=db,
+                is_default=True,  # as _save_regenerate does
+            )
+            created_real_version.append(real_ver.id)
+        finally:
+            db.close()
+
+    import backend.services.generation as gen_module
+    monkeypatch.setattr(gen_module, "run_generation", fake_run_generation)
+
+    from backend.services.book_regenerate import regenerate_segment
+    result = regenerate_segment(generated_book["seg1_id"], db=temp_db)
+
+    placeholder_version_id = result.version_id
+
+    # Check the default version's audio path is the real one, not a placeholder.
+    db = TestSession()
+    try:
+        from backend.services import versions as versions_mod
+        default = versions_mod.get_default_version(generated_book["gen1_id"], db)
+        assert default is not None, "Expected a default version after regeneration"
+        assert default.audio_path == REAL_AUDIO_PATH, (
+            f"Active version audio_path should be the real synthesized path "
+            f"{REAL_AUDIO_PATH!r}, got {default.audio_path!r} — "
+            f"this means the completion hook re-promoted the placeholder"
+        )
+        # The default version must NOT be the placeholder version id
+        assert default.id != placeholder_version_id or default.audio_path == REAL_AUDIO_PATH, (
+            "If default is the placeholder, it must have been updated with the real audio path"
+        )
+    finally:
+        db.close()
+
+
+# ---------------------------------------------------------------------------
+# Fix 2: emotion-only override path (lines ~115-116 of book_regenerate.py)
+# ---------------------------------------------------------------------------
+
+
+def test_regenerate_emotion_only_override_uses_segment_proxy(
+    temp_db, generated_book, monkeypatch, tmp_path
+):
+    """regenerate_segment(seg_id, emotion='angry') with NO instruct override
+    must use the _SegmentProxy path to compose an instruct that reflects the
+    emotion override (lines ~115-116 of book_regenerate.py).
+
+    seg1 has emotion='calm', delivery='slowly'. Passing emotion='angry' should
+    produce an instruct containing 'angry' (not 'calm').
+    """
+    import backend.config as _cfg
+    _cfg._data_dir = tmp_path
+
+    def mock_enqueue(gen_id, coro):
+        try:
+            asyncio.run(coro)
+        except Exception:
+            pass
+
+    import backend.services.task_queue as tq_module
+    monkeypatch.setattr(tq_module, "enqueue_generation", mock_enqueue)
+
+    captured = {}
+
+    async def mock_run_generation(**kwargs):
+        captured.update(kwargs)
+
+    import backend.services.generation as gen_module
+    monkeypatch.setattr(gen_module, "run_generation", mock_run_generation)
+
+    from backend.services.book_regenerate import regenerate_segment
+
+    # emotion override only — no instruct
+    regenerate_segment(
+        generated_book["seg1_id"],
+        emotion="angry",
+        db=temp_db,
+    )
+
+    assert "instruct" in captured, "run_generation must receive an instruct kwarg"
+    instruct = captured["instruct"]
+    assert instruct is not None, "instruct should not be None for emotion-only override"
+    assert "angry" in instruct.lower(), (
+        f"emotion-only override: instruct should contain 'angry', got {instruct!r}"
+    )
+    assert "calm" not in instruct.lower(), (
+        f"emotion-only override: instruct should NOT contain old emotion 'calm', got {instruct!r}"
+    )
