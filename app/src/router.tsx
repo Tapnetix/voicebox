@@ -20,6 +20,7 @@ import { LogsPage } from '@/components/ServerTab/LogsPage';
 import { MCPPage } from '@/components/ServerTab/MCPPage';
 import { SettingsLayout } from '@/components/ServerTab/ServerTab';
 import { Sidebar } from '@/components/Sidebar';
+import { BooksTab } from '@/components/BooksTab/BooksTab';
 import { StoriesTab } from '@/components/StoriesTab/StoriesTab';
 import { Toaster } from '@/components/ui/toaster';
 import { VoicesTab } from '@/components/VoicesTab/VoicesTab';
@@ -104,6 +105,13 @@ const storiesRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/stories',
   component: StoriesTab,
+});
+
+// Books route
+const booksRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/books',
+  component: BooksTab,
 });
 
 // Voices route
@@ -203,6 +211,7 @@ const serverRedirectRoute = createRoute({
 const routeTree = rootRoute.addChildren([
   indexRoute,
   storiesRoute,
+  booksRoute,
   capturesRoute,
   voicesRoute,
   effectsRoute,
