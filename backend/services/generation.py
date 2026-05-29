@@ -320,6 +320,15 @@ def _save_regenerate(
 ) -> str:
     """Save regeneration output as a new version with auto-label.
 
+    When *version_id* is provided (e.g. a placeholder row pre-created by
+    ``book_regenerate.regenerate_segment``), the existing row is updated
+    in-place with the real audio path rather than creating a new row.  This
+    ensures the ``version_id`` returned in the 202 response continues to point
+    at the synthesized audio after completion.
+
+    When *version_id* is ``None`` (timeline-editor regenerate), a new version
+    row is created as before.
+
     Returns the audio path.
     """
     from . import versions as versions_mod
@@ -330,6 +339,22 @@ def _save_regenerate(
     audio_path = config.get_generations_dir() / f"{generation_id}_{suffix}.wav"
     save_audio(audio, str(audio_path), sample_rate)
 
+    storage_path = config.to_storage_path(audio_path)
+
+    if version_id is not None:
+        # Update the placeholder row in-place: set the real audio path and
+        # promote it to default.  This is the correct behaviour when the caller
+        # pre-created a placeholder so it could hand back a stable version_id.
+        from ..database import GenerationVersion as DBGenerationVersion
+
+        existing = db.query(DBGenerationVersion).filter_by(id=version_id).first()
+        if existing is not None:
+            existing.audio_path = storage_path
+            db.commit()
+            versions_mod.set_default_version(version_id, db)
+            return storage_path
+        # Fall through to create a new version if the placeholder was lost.
+
     # Count via DB query rather than list length to avoid TOCTOU race
     from ..database import GenerationVersion as DBGenerationVersion
 
@@ -339,10 +364,10 @@ def _save_regenerate(
     versions_mod.create_version(
         generation_id=generation_id,
         label=label,
-        audio_path=config.to_storage_path(audio_path),
+        audio_path=storage_path,
         db=db,
         effects_chain=None,
         is_default=True,
     )
 
-    return config.to_storage_path(audio_path)
+    return storage_path

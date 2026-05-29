@@ -30,6 +30,7 @@ import {
   useMergeSegments,
 } from '@/lib/hooks/useBooks';
 import { SegmentDeliveryControl } from './SegmentDeliveryControl';
+import { SegmentRegenerateControl } from './SegmentRegenerateControl';
 import type { CharacterResponse, SegmentResponse } from '@/lib/api/types';
 import { useBooksStore } from '@/stores/booksStore';
 
@@ -358,6 +359,20 @@ function SelectionDialog({
               </option>
             ))}
           </select>
+        </div>
+      )}
+
+      {/* Per-line regenerate — D3 */}
+      {segment.audio?.status && segment.audio.status !== 'none' && (
+        <div className="mb-3">
+          <p className="mb-1 text-xs text-muted-foreground">Audio</p>
+          <SegmentRegenerateControl
+            segmentId={segment.id}
+            bookId={bookId}
+            chapterId={chapterId}
+            audioStatus={segment.audio?.status}
+            onDone={onClose}
+          />
         </div>
       )}
 
