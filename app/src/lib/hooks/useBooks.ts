@@ -395,6 +395,54 @@ export function useGenerateBook() {
   });
 }
 
+// ─── Clone voice for character ────────────────────────────────────────────────
+
+/**
+ * Creates a book-scoped cloned voice profile from an audio sample and
+ * optionally uploads the sample to it.
+ *
+ * Flow: createProfile (voice_type: 'cloned', is_library: false) →
+ *       addProfileSample → return profile { id, name }
+ *
+ * The returned profile is book-scoped (not in the global library) so it
+ * appears under "this book's voices" until promoted via C13.
+ */
+export function useCloneVoiceForCharacter() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({
+      bookId: _bookId,
+      charId: _charId,
+      name,
+      file,
+    }: {
+      bookId: string;
+      charId: string;
+      name: string;
+      file: File;
+    }) => {
+      // Step 1: create a cloned profile (book-scoped)
+      const profile = await apiClient.createProfile({
+        name,
+        language: 'en',
+        voice_type: 'cloned',
+      });
+
+      // Step 2: upload the sample file to the profile
+      await apiClient.addProfileSample(profile.id, file, '');
+
+      return profile;
+    },
+    onSuccess: (_data, variables) => {
+      // Invalidate book voice-options so the new clone appears in the list
+      queryClient.invalidateQueries({
+        queryKey: ['books', variables.bookId, 'voice-options'],
+      });
+    },
+  });
+}
+
 // ─── Export mutations ─────────────────────────────────────────────────────────
 
 export function useStartExport() {

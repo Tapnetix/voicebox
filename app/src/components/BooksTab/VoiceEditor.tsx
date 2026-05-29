@@ -23,7 +23,8 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
-import { useCharacters, usePreviewCharacter, useUpdateCharacter, useVoiceOptions } from '@/lib/hooks/useBooks';
+import { useCharacters, usePreviewCharacter, useUpdateCharacter, useVoiceOptions, useCloneVoiceForCharacter } from '@/lib/hooks/useBooks';
+import { useAudioRecording } from '@/lib/hooks/useAudioRecording';
 import { apiClient } from '@/lib/api/client';
 import { cn } from '@/lib/utils/cn';
 import { useBooksStore } from '@/stores/booksStore';
@@ -186,6 +187,254 @@ function VoiceCard({ name, meta, badge, isSelected, onSelect, onPreview }: Voice
       >
         ▶
       </Button>
+    </div>
+  );
+}
+
+// ─── CloneTabBody ─────────────────────────────────────────────────────────────
+
+interface CloneTabBodyProps {
+  bookId: string | null;
+  charId: string | null;
+  charName: string;
+  previewAudioSrc: string | null;
+  onCloned: (profileId: string) => void;
+  onAssign: (profileId: string) => void;
+  isAssigning: boolean;
+}
+
+function CloneTabBody({
+  bookId,
+  charId,
+  charName,
+  previewAudioSrc,
+  onCloned,
+  onAssign,
+  isAssigning,
+}: CloneTabBodyProps) {
+  const { t } = useTranslation();
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  const [sampleFile, setSampleFile] = useState<File | null>(null);
+  const [sampleDuration, setSampleDuration] = useState<number | null>(null);
+  const [voiceName, setVoiceName] = useState(`${charName} (cloned)`);
+  const [cloneError, setCloneError] = useState<string | null>(null);
+  const [clonedProfileId, setClonedProfileId] = useState<string | null>(null);
+
+  const cloneVoice = useCloneVoiceForCharacter();
+
+  // ── Audio recording ───────────────────────────────────────────────────────
+  const recording = useAudioRecording({
+    maxDurationSeconds: 29,
+    onRecordingComplete: (blob, duration) => {
+      const file = new File([blob], `${charName}-recording.wav`, { type: 'audio/wav' });
+      setSampleFile(file);
+      setSampleDuration(duration ?? null);
+      setClonedProfileId(null);
+      setCloneError(null);
+    },
+  });
+
+  // ── Drag-and-drop helpers ─────────────────────────────────────────────────
+  const [isDragOver, setIsDragOver] = useState(false);
+
+  function handleDrop(e: React.DragEvent<HTMLDivElement>) {
+    e.preventDefault();
+    setIsDragOver(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file) loadFile(file);
+  }
+
+  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (file) loadFile(file);
+  }
+
+  function loadFile(file: File) {
+    setClonedProfileId(null);
+    setCloneError(null);
+
+    // Probe duration via AudioContext (async; we validate before upload)
+    const url = URL.createObjectURL(file);
+    const audio = new Audio(url);
+    audio.addEventListener('loadedmetadata', () => {
+      setSampleDuration(audio.duration);
+      URL.revokeObjectURL(url);
+    });
+    audio.addEventListener('error', () => {
+      setSampleDuration(null);
+      URL.revokeObjectURL(url);
+    });
+
+    setSampleFile(file);
+  }
+
+  // ── Validation ────────────────────────────────────────────────────────────
+  function validateDuration(): string | null {
+    if (sampleDuration === null) return null; // unknown — allow upload
+    if (sampleDuration < 3) return t('books.voiceEditor.cloneTooShort');
+    if (sampleDuration > 30) return t('books.voiceEditor.cloneTooLong');
+    return null;
+  }
+
+  // ── Create clone ──────────────────────────────────────────────────────────
+  async function handleCreate() {
+    if (!sampleFile || !bookId || !charId) return;
+
+    const validationError = validateDuration();
+    if (validationError) {
+      setCloneError(validationError);
+      return;
+    }
+
+    setCloneError(null);
+
+    try {
+      const profile = await cloneVoice.mutateAsync({
+        bookId,
+        charId,
+        name: voiceName || `${charName} (cloned)`,
+        file: sampleFile,
+      });
+      setClonedProfileId(profile.id);
+      onCloned(profile.id);
+    } catch (err) {
+      setCloneError(err instanceof Error ? err.message : 'Clone failed');
+    }
+  }
+
+  // ── Format duration display ───────────────────────────────────────────────
+  function formatDuration(sec: number): string {
+    const m = Math.floor(sec / 60);
+    const s = Math.floor(sec % 60);
+    return m > 0 ? `${m}:${s.toString().padStart(2, '0')}` : `0:${s.toString().padStart(2, '0')}`;
+  }
+
+  return (
+    <div data-testid="voice-panel-clone">
+      {/* Description */}
+      <p className="text-xs text-muted-foreground mb-3">
+        {t('books.voiceEditor.cloneDescription')}
+      </p>
+
+      {/* Two-column layout: upload/record | name + create */}
+      <div className="flex gap-3 items-start">
+        {/* Left: dropzone + record */}
+        <div className="flex flex-col gap-2 flex-1">
+          {/* Dropzone */}
+          <div
+            data-testid="clone-dropzone"
+            role="button"
+            tabIndex={0}
+            onClick={() => fileInputRef.current?.click()}
+            onKeyDown={(e) => e.key === 'Enter' && fileInputRef.current?.click()}
+            onDragOver={(e) => { e.preventDefault(); setIsDragOver(true); }}
+            onDragLeave={() => setIsDragOver(false)}
+            onDrop={handleDrop}
+            className={cn(
+              'flex flex-col items-center justify-center rounded border-2 border-dashed text-xs text-muted-foreground cursor-pointer px-3 py-5 transition-colors',
+              isDragOver ? 'border-primary bg-primary/5' : 'border-border hover:border-muted-foreground',
+              sampleFile && 'border-green-600 bg-green-900/10',
+            )}
+          >
+            {sampleFile ? (
+              <>
+                <span className="text-green-400 font-medium">{sampleFile.name}</span>
+                {sampleDuration !== null && (
+                  <span className="text-muted-foreground mt-1">{formatDuration(sampleDuration)}</span>
+                )}
+              </>
+            ) : (
+              <>
+                <span>{t('books.voiceEditor.cloneDropzoneLabel')}</span>
+                <span className="text-[11px] mt-0.5">{t('books.voiceEditor.cloneDropzoneSub')}</span>
+              </>
+            )}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="audio/wav,audio/mp3,audio/mpeg,audio/flac,audio/*"
+              className="sr-only"
+              onChange={handleFileChange}
+              tabIndex={-1}
+            />
+          </div>
+
+          {/* Record from mic */}
+          <Button
+            data-testid="record-btn"
+            variant="ghost"
+            size="sm"
+            onClick={recording.isRecording ? recording.stopRecording : recording.startRecording}
+            className={cn(recording.isRecording && 'text-red-400 border-red-400')}
+          >
+            {recording.isRecording
+              ? `${t('books.voiceEditor.cloneStopBtn')} (${Math.floor(recording.duration)}s)`
+              : t('books.voiceEditor.cloneRecordBtn')}
+          </Button>
+          {recording.error && (
+            <p className="text-xs text-red-400">{recording.error}</p>
+          )}
+        </div>
+
+        {/* Right: voice name + create button */}
+        <div className="flex flex-col gap-2 flex-1">
+          <label className="flex flex-col gap-1">
+            <span className="text-xs text-muted-foreground">
+              {t('books.voiceEditor.cloneVoiceNameLabel')}
+            </span>
+            <Input
+              value={voiceName}
+              onChange={(e) => setVoiceName(e.target.value)}
+              placeholder={t('books.voiceEditor.cloneVoiceNamePlaceholder', { name: charName })}
+              className="h-7 text-xs"
+            />
+          </label>
+
+          <Button
+            data-testid="create-clone-btn"
+            onClick={handleCreate}
+            disabled={!sampleFile || cloneVoice.isPending}
+            size="sm"
+          >
+            {cloneVoice.isPending
+              ? t('books.voiceEditor.cloneCreating')
+              : t('books.voiceEditor.cloneCreateBtn')}
+          </Button>
+        </div>
+      </div>
+
+      {/* Inline error */}
+      {cloneError && (
+        <div role="alert" className="mt-2 text-xs text-red-400 rounded border border-red-800 bg-red-900/20 px-3 py-2">
+          {cloneError}
+        </div>
+      )}
+
+      {/* Preview player */}
+      <PreviewPlayer audioSrc={previewAudioSrc} />
+
+      {/* Action row — only visible after clone is created */}
+      {clonedProfileId && (
+        <div className="flex items-center justify-end gap-2 mt-3">
+          <Button
+            data-testid="preview-voice-btn"
+            variant="secondary"
+            size="sm"
+            onClick={() => {/* auto-preview triggered by onCloned; manual re-trigger here */}}
+          >
+            {t('books.voiceEditor.generatePreview')}
+          </Button>
+          <Button
+            data-testid="assign-clone-btn"
+            size="sm"
+            onClick={() => onAssign(clonedProfileId)}
+            disabled={isAssigning}
+          >
+            {t('books.voiceEditor.cloneAssignBtn')}
+          </Button>
+        </div>
+      )}
     </div>
   );
 }
@@ -491,6 +740,12 @@ export function VoiceEditor({ initialTab = 'design' }: VoiceEditorProps) {
   const preview = usePreviewCharacter();
   const updateCharacter = useUpdateCharacter();
 
+  // ── Clone state ───────────────────────────────────────────────────────────
+  // clonePreviewSrc: will be set when auto-preview returns in a future
+  // iteration; for now the shared previewAudioSrc from usePreviewCharacter
+  // is passed directly to CloneTabBody.
+  const [clonePreviewSrc] = useState<string | null>(null);
+
   // ── Local state ───────────────────────────────────────────────────────────
   const [designPrompt, setDesignPrompt] = useState(character?.vocal_description ?? '');
 
@@ -536,6 +791,35 @@ export function VoiceEditor({ initialTab = 'design' }: VoiceEditorProps) {
         bookId: selectedBookId,
         charId: character.id,
         data: { design_prompt: designPrompt || undefined },
+      },
+      {
+        onSuccess: () => setView('overview'),
+      },
+    );
+  }
+
+  // ── Clone tab actions ─────────────────────────────────────────────────────
+
+  /** Called after clone profile is created — auto-preview a character line */
+  function handleCloned(profileId: string) {
+    if (!character) return;
+    // Auto-preview in the cloned voice
+    preview.mutate(
+      {
+        charId: character.id,
+        data: { profile_id: profileId },
+      },
+    );
+  }
+
+  /** Assign the cloned profile to the character and go back to overview */
+  function handleAssignClone(profileId: string) {
+    if (!character || !selectedBookId) return;
+    updateCharacter.mutate(
+      {
+        bookId: selectedBookId,
+        charId: character.id,
+        data: { profile_id: profileId },
       },
       {
         onSuccess: () => setView('overview'),
@@ -768,13 +1052,17 @@ export function VoiceEditor({ initialTab = 'design' }: VoiceEditorProps) {
                 />
               </TabsContent>
 
-              {/* Clone tab — C12 fills the body here */}
+              {/* Clone tab — C12 */}
               <TabsContent value="clone">
-                <p className="text-xs text-muted-foreground py-4 text-center">
-                  {t('books.voiceEditor.clonePlaceholder')}
-                </p>
-                {/* Shared preview-player row (C12 reuses this) */}
-                <PreviewPlayer audioSrc={previewAudioSrc} />
+                <CloneTabBody
+                  bookId={selectedBookId}
+                  charId={character.id}
+                  charName={character.name}
+                  previewAudioSrc={clonePreviewSrc ?? previewAudioSrc}
+                  onCloned={handleCloned}
+                  onAssign={handleAssignClone}
+                  isAssigning={updateCharacter.isPending}
+                />
               </TabsContent>
 
               {/* Design tab — fully wired in C10 */}

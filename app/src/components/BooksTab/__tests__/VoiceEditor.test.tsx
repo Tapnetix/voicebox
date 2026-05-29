@@ -76,6 +76,19 @@ vi.mock('@/lib/hooks/useBooks', () => ({
   }),
   useUpdateCharacter: () => ({ mutate: updateMutate, isPending: false }),
   useVoiceOptions: () => ({ data: { library: [], book: [], presets: [] } }),
+  useCloneVoiceForCharacter: () => ({ mutateAsync: vi.fn(), isPending: false }),
+}));
+
+// useAudioRecording needs PlatformProvider — mock it for unit tests
+vi.mock('@/lib/hooks/useAudioRecording', () => ({
+  useAudioRecording: () => ({
+    isRecording: false,
+    duration: 0,
+    error: null,
+    startRecording: vi.fn(),
+    stopRecording: vi.fn(),
+    cancelRecording: vi.fn(),
+  }),
 }));
 
 // ─── API client mock ──────────────────────────────────────────────────────────
@@ -284,11 +297,12 @@ describe('VoiceEditor (Design)', () => {
     expect(screen.getByTestId('voice-panel-library')).toBeInTheDocument();
   });
 
-  it('Clone tab body shows placeholder text', async () => {
+  it('Clone tab body shows the clone panel (C12)', async () => {
     const u = userEvent.setup();
     render(<VoiceEditor />);
     await u.click(screen.getByRole('tab', { name: /clone/i }));
-    expect(screen.getByText(/coming soon/i)).toBeInTheDocument();
+    expect(screen.getByTestId('voice-panel-clone')).toBeInTheDocument();
+    expect(screen.getByTestId('clone-dropzone')).toBeInTheDocument();
   });
 
   it('preview-voice-btn passes design_prompt to preview mutate', async () => {
