@@ -84,7 +84,7 @@ test.describe('S2: Stream analysis progress with live characters', () => {
     // ── 5. S2-a: At least one stage becomes active or done ────────────────────
     await expect(
       page.locator('[data-testid="analysis-steps"] [data-status="active"], [data-testid="analysis-steps"] [data-status="done"]'),
-    ).toHaveCount({ minimum: 1 }, { timeout: 30_000 });
+    ).not.toHaveCount(0, { timeout: 30_000 });
 
     // ── 6. S2-b: Characters appear in live-characters BEFORE completion ───────
     // The component appends character_detected events incrementally; assert at

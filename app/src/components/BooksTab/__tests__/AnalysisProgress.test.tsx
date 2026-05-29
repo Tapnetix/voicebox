@@ -88,9 +88,10 @@ describe('AnalysisProgress', () => {
         progress: 30,
       });
     });
-    // The reconcile stage should be marked active
+    // The reconcile stage row must carry data-status="active"
     const steps = screen.getByTestId('analysis-steps');
-    expect(steps).toBeInTheDocument();
+    const reconcileRow = steps.querySelector('[data-stage="reconcile"]');
+    expect(reconcileRow).toHaveAttribute('data-status', 'active');
   });
 
   it('deduplicates characters by id', () => {
