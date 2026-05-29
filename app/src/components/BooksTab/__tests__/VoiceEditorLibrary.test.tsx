@@ -29,6 +29,6 @@ describe('VoiceEditor (Library)', () => {
     const presets = screen.getByTestId('preset-voices');
     await u.click(within(presets).getByText('Heart'));
     await u.click(screen.getByTestId('assign-selected-btn'));
-    expect(updateMutate).toHaveBeenCalledWith(expect.objectContaining({ preset_voice_id: 'af_heart' }), expect.anything());
+    expect(updateMutate).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ preset_voice_id: 'af_heart' }) }), expect.anything());
   });
 });

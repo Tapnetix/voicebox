@@ -138,6 +138,8 @@
       "libraryGenderAny": "Gender: any",
       "libraryGenderFemale": "Female",
       "libraryGenderMale": "Male",
+      "libraryAccentFilter": "Accent filter",
+      "libraryAccentAny": "Accent: any",
       "libraryYours": "Your library",
       "libraryYoursSub": "saved, reusable",
       "libraryBook": "This book's voices",

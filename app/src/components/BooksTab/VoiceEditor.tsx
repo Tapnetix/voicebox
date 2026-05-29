@@ -211,11 +211,17 @@ function LibraryTabBody({
   const { data: voiceOptions } = useVoiceOptions(bookId);
   const [search, setSearch] = useState('');
   const [genderFilter, setGenderFilter] = useState('any');
+  const [accentFilter, setAccentFilter] = useState('any');
   const [selected, setSelected] = useState<LibraryCandidate | null>(null);
 
   const library: VoiceLibraryEntry[] = (voiceOptions?.library ?? []) as unknown as VoiceLibraryEntry[];
   const book: VoiceLibraryEntry[] = (voiceOptions?.book ?? []) as unknown as VoiceLibraryEntry[];
   const presets: VoicePresetEntry[] = (voiceOptions?.presets ?? []) as unknown as VoicePresetEntry[];
+
+  // Derive unique accent values from the preset list for the accent filter
+  const accentOptions = Array.from(
+    new Set(presets.map((p) => p.accent).filter((a): a is string => Boolean(a))),
+  ).sort();
 
   // Client-side filter helper
   function filterVoices<T extends { name: string; gender?: string | null }>(voices: T[]): T[] {
@@ -228,9 +234,21 @@ function LibraryTabBody({
     });
   }
 
+  function filterPresets(voices: VoicePresetEntry[]): VoicePresetEntry[] {
+    return voices.filter((v) => {
+      const matchesSearch =
+        !search || v.name.toLowerCase().includes(search.toLowerCase());
+      const matchesGender =
+        genderFilter === 'any' || !v.gender || v.gender.toLowerCase() === genderFilter.toLowerCase();
+      const matchesAccent =
+        accentFilter === 'any' || !v.accent || v.accent.toLowerCase() === accentFilter.toLowerCase();
+      return matchesSearch && matchesGender && matchesAccent;
+    });
+  }
+
   const filteredLibrary = filterVoices(library);
   const filteredBook = filterVoices(book);
-  const filteredPresets = filterVoices(presets);
+  const filteredPresets = filterPresets(presets);
 
   function isSelected(candidate: LibraryCandidate) {
     if (!selected) return false;
@@ -287,6 +305,18 @@ function LibraryTabBody({
           <option value="any">{t('books.voiceEditor.libraryGenderAny')}</option>
           <option value="female">{t('books.voiceEditor.libraryGenderFemale')}</option>
           <option value="male">{t('books.voiceEditor.libraryGenderMale')}</option>
+        </select>
+        <select
+          className="flex-1 h-7 rounded border border-border bg-background text-xs px-1"
+          value={accentFilter}
+          onChange={(e) => setAccentFilter(e.target.value)}
+          aria-label={t('books.voiceEditor.libraryAccentFilter')}
+          data-testid="accent-filter"
+        >
+          <option value="any">{t('books.voiceEditor.libraryAccentAny')}</option>
+          {accentOptions.map((a) => (
+            <option key={a} value={a}>{a}</option>
+          ))}
         </select>
       </div>
 
@@ -537,8 +567,7 @@ export function VoiceEditor({ initialTab = 'design' }: VoiceEditorProps) {
           bookId: selectedBookId,
           charId: character.id,
           data: { preset_voice_id: candidate.id },
-          preset_voice_id: candidate.id,
-        } as Parameters<typeof updateCharacter.mutate>[0],
+        },
         {
           onSuccess: () => setView('overview'),
         },
@@ -549,8 +578,7 @@ export function VoiceEditor({ initialTab = 'design' }: VoiceEditorProps) {
           bookId: selectedBookId,
           charId: character.id,
           data: { profile_id: candidate.id },
-          profile_id: candidate.id,
-        } as Parameters<typeof updateCharacter.mutate>[0],
+        },
         {
           onSuccess: () => setView('overview'),
         },
