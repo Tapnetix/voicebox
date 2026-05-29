@@ -12,6 +12,7 @@ import type {
   GenerateBookRequest,
   GenerateChapterRequest,
   RegenerateSegmentRequest,
+  SegmentPreviewRequest,
   SegmentMergeRequest,
   SegmentSplitRequest,
   SegmentUpdateRequest,
@@ -359,9 +360,10 @@ export function useRegenerateSegment() {
 }
 
 /**
- * Preview a single segment by regenerating its audio on-the-fly (non-destructive).
- * Uses the regenerate endpoint — the caller should not overwrite the stored version.
- * The result's audio_path can be played directly; no query invalidation is needed.
+ * Preview a single segment's audio with the given emotion/instruct — genuinely
+ * non-destructive. Routes through POST /segments/{id}/preview, which does NOT
+ * create or promote a GenerationVersion and does NOT change the stored take.
+ * The result's audio_path can be played directly; no query invalidation needed.
  */
 export function usePreviewSegment() {
   return useMutation({
@@ -370,8 +372,8 @@ export function usePreviewSegment() {
       data,
     }: {
       segmentId: string;
-      data?: RegenerateSegmentRequest;
-    }) => apiClient.regenerateSegment(segmentId, data),
+      data?: SegmentPreviewRequest;
+    }) => apiClient.previewSegment(segmentId, data),
   });
 }
 

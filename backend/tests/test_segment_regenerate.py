@@ -716,3 +716,75 @@ def test_regenerate_emotion_only_override_uses_segment_proxy(
     assert "calm" not in instruct.lower(), (
         f"emotion-only override: instruct should NOT contain old emotion 'calm', got {instruct!r}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Fix 3: non-destructive preview (POST /segments/{id}/preview)
+# ---------------------------------------------------------------------------
+
+
+def test_preview_segment_is_non_destructive(temp_db, generated_book, monkeypatch):
+    """preview_segment must NOT create a GenerationVersion, promote a default,
+    or change BookSegment.audio_status — it only returns a transient clip.
+
+    This is the regression guard for the impl-review finding that the D4
+    "preview" was routing through regenerate (which promotes a new default
+    version and leaks take rows)."""
+    from backend.services import book_regenerate
+    import backend.services.book_characters as book_characters_mod
+
+    seg1_id = generated_book["seg1_id"]
+    gen1_id = generated_book["gen1_id"]
+
+    versions_before = (
+        temp_db.query(GenerationVersion).filter_by(generation_id=gen1_id).count()
+    )
+    seg_before = temp_db.query(BookSegment).filter_by(id=seg1_id).first()
+    status_before = seg_before.audio_status
+    default_before = (
+        temp_db.query(GenerationVersion)
+        .filter_by(generation_id=gen1_id, is_default=True)
+        .first()
+        .id
+    )
+
+    async def fake_preview_character_voice(char_id, text, db, emotion=None):
+        # mirror the real preview_character_voice return shape
+        return {"generation_id": "preview-tmp", "audio_path": "generations/preview_tmp.wav"}
+
+    monkeypatch.setattr(
+        book_characters_mod, "preview_character_voice", fake_preview_character_voice
+    )
+
+    result = asyncio.run(
+        book_regenerate.preview_segment(seg1_id, emotion="angry", db=temp_db)
+    )
+
+    # Returns the transient preview clip
+    assert result["generation_id"] == "preview-tmp"
+    assert result["audio_path"].endswith(".wav")
+
+    # Non-destructive: nothing about the stored take changed
+    versions_after = (
+        temp_db.query(GenerationVersion).filter_by(generation_id=gen1_id).count()
+    )
+    assert versions_after == versions_before, "preview must not create a GenerationVersion"
+    default_after = (
+        temp_db.query(GenerationVersion)
+        .filter_by(generation_id=gen1_id, is_default=True)
+        .first()
+        .id
+    )
+    assert default_after == default_before, "preview must not change the default version"
+    seg_after = temp_db.query(BookSegment).filter_by(id=seg1_id).first()
+    assert seg_after.audio_status == status_before, "preview must not change audio_status"
+
+
+def test_preview_segment_unknown_returns_404(temp_db):
+    """preview_segment raises 404 for an unknown segment."""
+    from fastapi import HTTPException
+    from backend.services import book_regenerate
+
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(book_regenerate.preview_segment("does-not-exist", db=temp_db))
+    assert exc.value.status_code == 404

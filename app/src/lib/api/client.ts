@@ -42,6 +42,8 @@ import type {
   ProfileSampleResponse,
   RegenerateSegmentRequest,
   RegenerateSegmentResponse,
+  SegmentPreviewRequest,
+  SegmentPreviewResponse,
   SegmentMergeRequest,
   SegmentResponse,
   SegmentSplitRequest,
@@ -1111,6 +1113,21 @@ class ApiClient {
     data?: RegenerateSegmentRequest,
   ): Promise<RegenerateSegmentResponse> {
     return this.request<RegenerateSegmentResponse>(`/segments/${segmentId}/regenerate`, {
+      method: 'POST',
+      body: JSON.stringify(data ?? {}),
+    });
+  }
+
+  /**
+   * Non-destructive segment preview: synthesizes a clip with the given
+   * emotion/instruct WITHOUT creating or promoting a GenerationVersion or
+   * changing the stored take. Returns a playable audio_path.
+   */
+  async previewSegment(
+    segmentId: string,
+    data?: SegmentPreviewRequest,
+  ): Promise<SegmentPreviewResponse> {
+    return this.request<SegmentPreviewResponse>(`/segments/${segmentId}/preview`, {
       method: 'POST',
       body: JSON.stringify(data ?? {}),
     });

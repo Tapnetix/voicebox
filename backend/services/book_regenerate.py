@@ -187,6 +187,96 @@ def regenerate_segment(
 
 
 # ---------------------------------------------------------------------------
+# Non-destructive segment preview
+# ---------------------------------------------------------------------------
+
+
+async def preview_segment(
+    segment_id: str,
+    *,
+    emotion: Optional[str] = None,
+    instruct: Optional[str] = None,
+    db: Session,
+) -> dict:
+    """Synthesize a preview clip for a segment WITHOUT mutating any stored data.
+
+    This is genuinely non-destructive: it does NOT create a new
+    ``GenerationVersion``, does NOT promote any version to default, and does
+    NOT flip ``BookSegment.audio_status``.  The result is a temporary
+    ``Generation`` row (similar to the character-preview path) whose audio
+    can be played back once.
+
+    Args:
+        segment_id: Primary key of the BookSegment to preview.
+        emotion:    Optional emotion override (replaces segment's current emotion).
+                    When omitted, the segment's current ``emotion`` field is used.
+        instruct:   Optional full instruct string override.  When provided,
+                    takes precedence over emotion.
+        db:         Active SQLAlchemy session.
+
+    Returns:
+        ``{"generation_id": ..., "audio_path": ...}``
+
+    Raises:
+        HTTPException 404 if the segment or its character/profile is not found.
+        HTTPException 409 if the book is currently generating.
+    """
+    from fastapi import HTTPException
+    from .. import database
+    from .book_characters import preview_character_voice
+
+    segment = db.query(database.BookSegment).filter_by(id=segment_id).first()
+    if segment is None:
+        raise HTTPException(status_code=404, detail="Segment not found")
+
+    chapter = db.query(database.Chapter).filter_by(id=segment.chapter_id).first()
+    if chapter is None:
+        raise HTTPException(status_code=404, detail="Chapter not found")
+
+    book = db.query(database.Book).filter_by(id=chapter.book_id).first()
+    if book is None:
+        raise HTTPException(status_code=404, detail="Book not found")
+
+    if book.status == "generating":
+        raise HTTPException(
+            status_code=409,
+            detail="Book is generating — wait until it finishes before previewing",
+        )
+
+    if segment.character_id is None:
+        raise HTTPException(
+            status_code=409, detail="Segment has no assigned character"
+        )
+
+    # Resolve the emotion to pass to preview_character_voice.
+    # The preview_character_voice function's emotion parameter causes it to
+    # prepend "Speak with a {emotion} tone." to the instruct; we use
+    # the segment's emotion (or caller override) to drive the preview voice.
+    effective_emotion: Optional[str]
+    if instruct is not None:
+        # Full instruct override: skip emotion-based compose; pass instruct
+        # directly as emotion (preview_character_voice wraps it as a tone hint).
+        effective_emotion = instruct
+    elif emotion is not None:
+        effective_emotion = emotion
+    else:
+        # Use segment's current emotion setting
+        effective_emotion = segment.emotion
+
+    # Delegate to the existing non-destructive character preview path.
+    # This creates a transient Generation row + audio file but does NOT
+    # touch BookSegment.audio_status or create a GenerationVersion on the
+    # segment's existing Generation.
+    result = await preview_character_voice(
+        char_id=segment.character_id,
+        text=segment.text,
+        db=db,
+        emotion=effective_emotion,
+    )
+    return result
+
+
+# ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
 

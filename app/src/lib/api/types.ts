@@ -657,6 +657,18 @@ export interface CharacterPreviewResponse {
   audio_path: string;
 }
 
+/** Body for POST /segments/{id}/preview — non-destructive emotion preview. */
+export interface SegmentPreviewRequest {
+  emotion?: string;
+  instruct?: string;
+}
+
+/** Response from POST /segments/{id}/preview. */
+export interface SegmentPreviewResponse {
+  generation_id: string;
+  audio_path: string;
+}
+
 export interface GenerateChapterRequest {
   engine?: string;
   model_size?: string;

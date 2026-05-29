@@ -25,8 +25,10 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 # Default TTS engine and model size used when not specified by the caller.
+# "default" is the correct sentinel for kokoro (Qwen sizes like "1.7B" are
+# for the Qwen engine; kokoro has no meaningful model_size concept).
 _DEFAULT_ENGINE = "kokoro"
-_DEFAULT_MODEL_SIZE = "1.7B"
+_DEFAULT_MODEL_SIZE = "default"
 
 
 # ---------------------------------------------------------------------------
@@ -77,25 +79,277 @@ def compose_instruct(segment) -> Optional[str]:
 
 
 # ---------------------------------------------------------------------------
-# Fix 1: Completion hook — reset book.status when all segments settle
+# Completion hooks — segment-status lifecycle + book drain
 # ---------------------------------------------------------------------------
+
+
+async def _per_generation_completion_hook(
+    segment_id: str,
+    book_id: str,
+    inner_coro,
+) -> None:
+    """Per-generation wrapper that handles the full segment + book lifecycle.
+
+    Responsibilities (in order):
+    1. Await *inner_coro* (the real ``run_generation`` call).
+    2. Flip the owning ``BookSegment.audio_status`` to ``"completed"`` on
+       success, or ``"error"`` on failure.  This is the step that was
+       previously missing — ``run_generation`` only updates ``Generation``
+       rows, never ``BookSegment`` rows, so without this hook segments
+       remained ``"pending"`` forever.
+    3. When all segments in the chapter have settled, reflow the chapter's
+       ``StoryItem.start_time_ms`` values to real cumulative milliseconds
+       (using each ``Generation.duration``) so that the D5 read-along
+       ``useStoryPlayback`` can schedule clips at correct times instead of
+       using the order-counter placeholder values (0, 1, 2, …) written at
+       generation-materialisation time.
+    4. Publish ``generation_progress`` / ``generation_complete`` SSE events
+       and reset ``book.status`` to ``"analyzed"`` once all book segments
+       settle (the book-level drain logic shared with the progress-events
+       feature).
+
+    Args:
+        segment_id: Primary key of the ``BookSegment`` whose status to flip.
+        book_id:    The ``Book`` primary key for drain / SSE logic.
+        inner_coro: The ``run_generation`` coroutine to await.
+    """
+    from .. import database
+    from . import book_events
+
+    success = False
+    try:
+        await inner_coro
+        success = True
+    except Exception:
+        logger.exception(
+            "run_generation raised inside per-generation completion hook "
+            "(segment %s, book %s)",
+            segment_id,
+            book_id,
+        )
+
+    # ── Step 2: flip BookSegment.audio_status ─────────────────────────────
+    db: Session = next(database.get_db())
+    try:
+        segment = db.query(database.BookSegment).filter_by(id=segment_id).first()
+        if segment is not None:
+            segment.audio_status = "completed" if success else "error"
+            db.commit()
+
+        # ── Step 3: reflow StoryItem times if the whole chapter settled ───
+        if segment is not None:
+            chapter_id = segment.chapter_id
+            _reflow_chapter_story_times(chapter_id, db)
+
+        # ── Step 4: book-level progress events and drain ──────────────────
+        _publish_progress_and_drain(book_id, db, book_events)
+
+    except Exception:
+        logger.exception(
+            "Per-generation completion hook failed for segment %s book %s",
+            segment_id,
+            book_id,
+        )
+    finally:
+        db.close()
+
+
+def _reflow_chapter_story_times(chapter_id: str, db: Session) -> None:
+    """Reflow StoryItem.start_time_ms for a chapter to real cumulative ms.
+
+    Only executes when ALL segments in the chapter have settled (audio_status
+    is ``"completed"`` or ``"error"``).  Segments with ``"error"`` status have
+    no duration, so they contribute 0 ms (their StoryItem start time is still
+    updated for ordering correctness even though no audio exists).
+
+    Uses the ``Generation.duration`` field written by ``run_generation``
+    after synthesis.  A gap of 0 ms is used between segments (the Story
+    timeline editor manages gaps; the export step manages its own pauses).
+
+    Args:
+        chapter_id: The Chapter whose Story's StoryItems to reflow.
+        db:         Active SQLAlchemy session (will be committed on change).
+    """
+    from .. import database
+
+    # Only reflow when all segments have settled (no pending/generating left)
+    segments = (
+        db.query(database.BookSegment)
+        .filter_by(chapter_id=chapter_id)
+        .order_by(database.BookSegment.order)
+        .all()
+    )
+    if not segments:
+        return
+
+    in_flight = sum(1 for s in segments if s.audio_status in {"pending", "generating"})
+    if in_flight > 0:
+        return  # Chapter not fully settled yet — defer reflow
+
+    # Find the chapter's Story
+    chapter = db.query(database.Chapter).filter_by(id=chapter_id).first()
+    if chapter is None or chapter.story_id is None:
+        return
+
+    # Fetch StoryItems ordered by current start_time_ms (reading order)
+    items = (
+        db.query(database.StoryItem)
+        .filter_by(story_id=chapter.story_id)
+        .order_by(database.StoryItem.start_time_ms)
+        .all()
+    )
+    if not items:
+        return
+
+    # Build a map from generation_id → Generation.duration (ms)
+    gen_ids = [item.generation_id for item in items]
+    gens = (
+        db.query(database.Generation)
+        .filter(database.Generation.id.in_(gen_ids))
+        .all()
+    )
+    duration_map: dict[str, int] = {
+        g.id: int((g.duration or 0.0) * 1000) for g in gens
+    }
+
+    # Reflow: assign cumulative start times
+    current_ms = 0
+    changed = False
+    for item in items:
+        if item.start_time_ms != current_ms:
+            item.start_time_ms = current_ms
+            changed = True
+        duration_ms = duration_map.get(item.generation_id, 0)
+        current_ms += duration_ms  # gap between items is 0; editor manages gaps
+
+    if changed:
+        try:
+            db.commit()
+            logger.info(
+                "Chapter %s: reflowed %d StoryItem start_time_ms values "
+                "(total chapter duration ~%d ms)",
+                chapter_id,
+                len(items),
+                current_ms,
+            )
+        except Exception:
+            logger.exception(
+                "Failed to commit StoryItem reflow for chapter %s", chapter_id
+            )
+            db.rollback()
+
+
+def _publish_progress_and_drain(book_id: str, db: Session, book_events) -> None:
+    """Publish generation_progress / generation_complete events and drain book status.
+
+    Computes per-chapter segment counts, publishes SSE events, and resets
+    ``book.status`` to ``"analyzed"`` when all segments have settled.
+
+    This is the book-level logic previously in ``_generation_with_completion_hook``
+    — extracted so it can be called from ``_per_generation_completion_hook``
+    after the segment status has already been flipped.
+
+    Args:
+        book_id:     The Book to inspect and potentially reset.
+        db:          Active session (must already reflect updated segment statuses).
+        book_events: The ``book_events`` module (passed in so tests can patch it).
+    """
+    from .. import database
+
+    chapters = (
+        db.query(database.Chapter)
+        .filter_by(book_id=book_id)
+        .order_by(database.Chapter.number)
+        .all()
+    )
+
+    # Pre-compute book-wide totals
+    chapter_segments: dict[str, list] = {}
+    book_total = 0
+    book_completed = 0
+    for chapter in chapters:
+        segs = (
+            db.query(database.BookSegment)
+            .filter_by(chapter_id=chapter.id)
+            .all()
+        )
+        chapter_segments[chapter.id] = segs
+        book_total += len(segs)
+        book_completed += sum(1 for s in segs if s.audio_status == "completed")
+
+    overall_progress = book_completed / book_total if book_total > 0 else 0.0
+
+    published_complete_ids: set[str] = set()
+
+    for chapter in chapters:
+        segments = chapter_segments[chapter.id]
+        total = len(segments)
+        completed = sum(1 for s in segments if s.audio_status == "completed")
+        errors = sum(1 for s in segments if s.audio_status == "error")
+
+        book_events.publish(
+            book_id,
+            {
+                "type": "generation_progress",
+                "chapter_id": chapter.id,
+                "completed": completed,
+                "errors": errors,
+                "total": total,
+                "overall_progress": overall_progress,
+            },
+        )
+
+        chapter_in_flight = sum(
+            1 for s in segments if s.audio_status in {"pending", "generating"}
+        )
+        if chapter_in_flight == 0 and chapter.id not in published_complete_ids:
+            published_complete_ids.add(chapter.id)
+            book_events.publish(
+                book_id,
+                {
+                    "type": "generation_complete",
+                    "chapter_id": chapter.id,
+                },
+            )
+
+    # Reset book.status if all segments have settled
+    in_flight = (
+        db.query(database.BookSegment)
+        .join(database.Chapter, database.BookSegment.chapter_id == database.Chapter.id)
+        .filter(
+            database.Chapter.book_id == book_id,
+            database.BookSegment.audio_status.in_({"pending", "generating"}),
+        )
+        .count()
+    )
+    if in_flight == 0:
+        book = db.query(database.Book).filter_by(id=book_id).first()
+        if book is not None and book.status == "generating":
+            book.status = "analyzed"
+            db.commit()
+            logger.info(
+                "Book %s: all segments settled — status reset to 'analyzed'", book_id
+            )
 
 
 async def _generation_with_completion_hook(
     book_id: str,
     inner_coro,
 ) -> None:
-    """Wrap *inner_coro* so that after it finishes (success or error) we check
-    whether any BookSegment for *book_id* is still pending/generating.  If none
-    remain, flip book.status back to 'analyzed' and publish progress/complete
-    SSE events on the per-book channel.
+    """Book-level wrapper used by the progress-events tests.
+
+    This hook is called by ``test_generation_progress_events.py`` directly
+    (it pre-sets segment statuses before calling).  For production code the
+    enqueue path uses ``_per_generation_completion_hook`` instead, which
+    additionally flips the segment's ``audio_status`` and reflowed StoryItem
+    times — see the docstring on that function.
+
+    Kept for backward-compat with the D2 progress-events tests which call
+    it directly after manually setting segment statuses to 'completed'.
 
     Args:
         book_id:    The Book primary key whose status we manage.
         inner_coro: The run_generation coroutine to await.
-
-    ``database.get_db`` is resolved dynamically at call time so that tests can
-    redirect it before the hook fires.
     """
     from .. import database
     from . import book_events
@@ -105,92 +359,9 @@ async def _generation_with_completion_hook(
     except Exception:
         logger.exception("run_generation raised inside completion hook")
     finally:
-        # Open a fresh session so we don't share state with the caller's session.
-        # Resolve get_db dynamically — allows tests to redirect it.
         db: Session = next(database.get_db())
         try:
-            # ── Compute per-chapter progress and publish events ────────────
-            chapters = (
-                db.query(database.Chapter)
-                .filter_by(book_id=book_id)
-                .order_by(database.Chapter.number)
-                .all()
-            )
-
-            # Pre-compute book-wide totals so overall_progress is correct for
-            # every chapter event (Fix 3: early complete chapter must not
-            # report 1.0 when later chapters are unstarted).
-            chapter_segments: dict[str, list] = {}
-            book_total = 0
-            book_completed = 0
-            for chapter in chapters:
-                segs = (
-                    db.query(database.BookSegment)
-                    .filter_by(chapter_id=chapter.id)
-                    .all()
-                )
-                chapter_segments[chapter.id] = segs
-                book_total += len(segs)
-                book_completed += sum(1 for s in segs if s.audio_status == "completed")
-
-            overall_progress = book_completed / book_total if book_total > 0 else 0.0
-
-            # Track which chapters already had generation_complete published in
-            # this invocation to avoid re-emitting for already-settled chapters
-            # as other segments from other chapters finish (Fix 2).
-            published_complete_ids: set[str] = set()
-
-            for chapter in chapters:
-                segments = chapter_segments[chapter.id]
-                total = len(segments)
-                completed = sum(1 for s in segments if s.audio_status == "completed")
-                errors = sum(1 for s in segments if s.audio_status == "error")
-
-                book_events.publish(
-                    book_id,
-                    {
-                        "type": "generation_progress",
-                        "chapter_id": chapter.id,
-                        "completed": completed,
-                        "errors": errors,
-                        "total": total,
-                        "overall_progress": overall_progress,
-                    },
-                )
-
-                # Publish generation_complete once per chapter, only at the
-                # moment that chapter's segments all settle (Fix 2).
-                chapter_in_flight = sum(
-                    1 for s in segments if s.audio_status in {"pending", "generating"}
-                )
-                if chapter_in_flight == 0 and chapter.id not in published_complete_ids:
-                    published_complete_ids.add(chapter.id)
-                    book_events.publish(
-                        book_id,
-                        {
-                            "type": "generation_complete",
-                            "chapter_id": chapter.id,
-                        },
-                    )
-
-            # ── Reset book.status if all book segments have settled ────────
-            in_flight = (
-                db.query(database.BookSegment)
-                .join(database.Chapter, database.BookSegment.chapter_id == database.Chapter.id)
-                .filter(
-                    database.Chapter.book_id == book_id,
-                    database.BookSegment.audio_status.in_({"pending", "generating"}),
-                )
-                .count()
-            )
-            if in_flight == 0:
-                book = db.query(database.Book).filter_by(id=book_id).first()
-                if book is not None and book.status == "generating":
-                    book.status = "analyzed"
-                    db.commit()
-                    logger.info(
-                        "Book %s: all segments settled — status reset to 'analyzed'", book_id
-                    )
+            _publish_progress_and_drain(book_id, db, book_events)
         except Exception:
             logger.exception(
                 "Completion hook failed to reset book.status for book %s", book_id
@@ -461,10 +632,20 @@ def enqueue_chapter_generation(
     )
 
     # Enqueue each generation through the TTS queue, wrapped with the
-    # completion hook so book.status resets when all segments settle.
+    # per-generation completion hook that flips BookSegment.audio_status,
+    # reflowed StoryItem times, then runs the book-level drain/progress logic.
     for gen_id in generation_ids:
         gen = db.query(database.Generation).filter_by(id=gen_id).first()
         if gen is None:
+            continue
+
+        # Look up the segment that owns this generation so the hook can flip
+        # its audio_status.
+        seg = db.query(database.BookSegment).filter_by(generation_id=gen_id).first()
+        if seg is None:
+            logger.warning(
+                "No BookSegment found for generation_id %s — skipping enqueue", gen_id
+            )
             continue
 
         inner = run_generation(
@@ -479,9 +660,10 @@ def enqueue_chapter_generation(
             mode="generate",
         )
 
-        wrapped = _generation_with_completion_hook(
-            book_id,
-            inner,
+        wrapped = _per_generation_completion_hook(
+            segment_id=seg.id,
+            book_id=book_id,
+            inner_coro=inner,
         )
 
         try:
@@ -550,10 +732,20 @@ def enqueue_book_generation(
     )
 
     # Enqueue each generation through the TTS queue, wrapped with the
-    # completion hook so book.status resets when all segments settle.
+    # per-generation completion hook that flips BookSegment.audio_status,
+    # reflowed StoryItem times, then runs the book-level drain/progress logic.
     for gen_id in generation_ids:
         gen = db.query(database.Generation).filter_by(id=gen_id).first()
         if gen is None:
+            continue
+
+        # Look up the segment that owns this generation so the hook can flip
+        # its audio_status.
+        seg = db.query(database.BookSegment).filter_by(generation_id=gen_id).first()
+        if seg is None:
+            logger.warning(
+                "No BookSegment found for generation_id %s — skipping enqueue", gen_id
+            )
             continue
 
         inner = run_generation(
@@ -568,9 +760,10 @@ def enqueue_book_generation(
             mode="generate",
         )
 
-        wrapped = _generation_with_completion_hook(
-            book_id,
-            inner,
+        wrapped = _per_generation_completion_hook(
+            segment_id=seg.id,
+            book_id=book_id,
+            inner_coro=inner,
         )
 
         try:

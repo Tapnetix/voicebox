@@ -50,8 +50,16 @@ def _collect_chapters(book_id: str, db: Session) -> list[dict[str, Any]]:
     """Collect ordered chapter dicts with segment audio paths for export.
 
     Each chapter dict has:
-      number, title, segment_paths (list of {path, is_scene_break})
+      number, title, segment_paths (list of plain str paths)
     Segments without completed audio are skipped.
+
+    NOTE: ``_stitch_chapter`` in audiobook_export.py supports a richer
+    ``{path, is_scene_break}`` entry format that inserts a longer scene-break
+    pause between scene/paragraph breaks.  That feature is currently unused
+    here because ``BookSegment`` has no scene/paragraph-break field — all
+    entries are plain strings.  If a ``is_scene_break`` flag is added to the
+    model in the future, emit ``{"path": ..., "is_scene_break": True}`` here
+    for those segments to activate the pause.
     """
     from ..database import BookSegment, Chapter, Generation
 

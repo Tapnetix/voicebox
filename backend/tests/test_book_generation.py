@@ -15,10 +15,19 @@ Tests:
 
 import asyncio
 import uuid
+import warnings
 from unittest.mock import MagicMock, patch
 
 import pytest
 from fastapi import FastAPI
+
+# The test mock intentionally discards un-awaited run_generation coroutines
+# (the outer wrapper is closed before they start).  Suppress the resulting
+# RuntimeWarning at the module level so test output stays clean.
+pytestmark = pytest.mark.filterwarnings(
+    "ignore::RuntimeWarning:asyncio",
+    "ignore:coroutine.*was never awaited:RuntimeWarning",
+)
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -66,13 +75,21 @@ def temp_db(engine_and_session):
 
 
 def _make_enqueue_mock(TestSession):
-    """Return an enqueue_generation mock that:
-    1. Marks all BookSegments linked to gen_id as "completed" (simulating TTS success).
-    2. Redirects database.get_db to the test session factory.
-    3. Runs the completion hook coroutine via asyncio.run().
+    """Return an enqueue_generation mock that correctly exercises the
+    per-generation completion hook WITHOUT pre-setting BookSegment.audio_status.
 
-    This exercises the Fix-1 completion hook fully: segments settle → hook fires
-    → book.status resets to 'analyzed'.
+    This mirrors what happens in production:
+    1. The real ``run_generation`` updates ONLY the ``Generation`` row
+       (status, duration, audio_path).  It does NOT touch ``BookSegment``.
+    2. The per-generation completion hook (``_per_generation_completion_hook``)
+       then flips ``BookSegment.audio_status`` to "completed" / "error".
+    3. The hook also reflowed ``StoryItem.start_time_ms`` and runs the
+       book-level drain / SSE-event logic.
+
+    Previously, the mock pre-set ``seg.audio_status = "completed"`` before
+    running the hook, which masked the bug that the hook was not flipping
+    segment status at all.  This version does NOT do that — the hook itself
+    must be responsible for flipping segment status.
     """
     def _get_test_db():
         db = TestSession()
@@ -83,24 +100,57 @@ def _make_enqueue_mock(TestSession):
 
     def _run_with_test_db(gen_id, coro):
         import backend.database as _db_module
+        from backend.services.book_generation import _per_generation_completion_hook
 
-        # Step 1: Mark segments associated with this gen_id as "completed"
-        # so the completion hook sees in_flight == 0 and resets book.status.
+        # Step 1: Simulate what real run_generation does —
+        # update the Generation row with completed status and duration.
+        # Critically, do NOT touch BookSegment.audio_status here; the
+        # per-generation hook is solely responsible for flipping it.
         db = TestSession()
+        seg_id = None
+        book_id = None
         try:
-            segs = db.query(_db_module.BookSegment).filter_by(generation_id=gen_id).all()
-            for seg in segs:
-                seg.audio_status = "completed"
+            gen = db.query(_db_module.Generation).filter_by(id=gen_id).first()
+            if gen:
+                gen.status = "completed"
+                gen.duration = 1.0  # real run_generation sets this after synthesis
+
+            seg = db.query(_db_module.BookSegment).filter_by(generation_id=gen_id).first()
+            if seg:
+                seg_id = seg.id
+                chapter = db.query(_db_module.Chapter).filter_by(id=seg.chapter_id).first()
+                if chapter:
+                    book_id = chapter.book_id
+
             db.commit()
         finally:
             db.close()
 
-        # Step 2: Redirect database.get_db to the test session factory so the
-        # completion hook opens a valid session in the test database.
+        # Close the original coroutine (which contains a run_generation
+        # inner coro that will never be awaited).  Suppress the resulting
+        # RuntimeWarning — it is expected; the mock does not run real TTS.
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)
+            coro.close()
+
+        if seg_id is None or book_id is None:
+            return
+
+        # Step 2: Run the per-generation completion hook with a successful
+        # no-op inner coroutine (no real TTS needed).  The hook will:
+        #   - Flip BookSegment.audio_status = "completed"
+        #   - Reflow StoryItem.start_time_ms with real ms
+        #   - Drain book.status to 'analyzed' when all segments settle
         original_get_db = _db_module.get_db
         _db_module.get_db = _get_test_db
+
+        async def _success_inner():
+            pass
+
         try:
-            asyncio.run(coro)
+            asyncio.run(
+                _per_generation_completion_hook(seg_id, book_id, _success_inner())
+            )
         except Exception:
             pass  # hook logs its own errors
         finally:
@@ -830,3 +880,177 @@ def test_book_generate_iterates_all_chapters(client, engine_and_session, tmp_pat
     assert r.status_code == 202, r.text
     body = r.json()
     assert body["queued_segments"] == 2  # 1 per chapter
+
+
+# ---------------------------------------------------------------------------
+# Fix 1 (Critical): per-generation hook flips BookSegment.audio_status
+# ---------------------------------------------------------------------------
+
+
+def test_per_generation_hook_flips_segment_status_without_mock_presetting(
+    client, analyzed_book, engine_and_session
+):
+    """The per-generation completion hook must flip BookSegment.audio_status
+    to 'completed' on success WITHOUT the mock pre-setting it.
+
+    This is the key regression test: previously the mock set audio_status
+    before the hook ran, masking that the hook was not doing it.  This test
+    verifies the hook itself is responsible.
+
+    After generate: both segments must be 'completed' (set by the hook, not
+    the mock), book.status must be 'analyzed', and generation_progress events
+    must report completed > 0.
+    """
+    _, TestSession = engine_and_session
+    book_id = analyzed_book["book_id"]
+    chapter_id = analyzed_book["chapter_id"]
+    seg1_id = analyzed_book["seg1_id"]
+    seg2_id = analyzed_book["seg2_id"]
+
+    r = client.post(f"/books/{book_id}/chapters/{chapter_id}/generate", json={})
+    assert r.status_code == 202, r.text
+
+    db = TestSession()
+    try:
+        seg1 = db.query(BookSegment).filter_by(id=seg1_id).first()
+        seg2 = db.query(BookSegment).filter_by(id=seg2_id).first()
+        book = db.query(Book).filter_by(id=book_id).first()
+
+        assert seg1.audio_status == "completed", (
+            f"seg1.audio_status should be 'completed' (set by per-generation hook), "
+            f"got {seg1.audio_status!r}"
+        )
+        assert seg2.audio_status == "completed", (
+            f"seg2.audio_status should be 'completed' (set by per-generation hook), "
+            f"got {seg2.audio_status!r}"
+        )
+        assert book.status == "analyzed", (
+            f"book.status should be 'analyzed' after all segments complete, "
+            f"got {book.status!r}"
+        )
+    finally:
+        db.close()
+
+
+def test_generation_status_shows_completed_after_generate(
+    client, analyzed_book, engine_and_session
+):
+    """After generate completes, generation-status reports completed=2 (not 0).
+
+    This failed before Fix 1 because segments never left audio_status='pending'
+    so the status endpoint always reported completed=0.
+    """
+    book_id = analyzed_book["book_id"]
+    chapter_id = analyzed_book["chapter_id"]
+
+    r = client.post(f"/books/{book_id}/chapters/{chapter_id}/generate", json={})
+    assert r.status_code == 202, r.text
+
+    r_status = client.get(f"/books/{book_id}/generation-status")
+    assert r_status.status_code == 200
+    body = r_status.json()
+
+    chapter_entry = body["chapters"][0]
+    assert chapter_entry["completed"] == 2, (
+        f"Expected completed=2 after generate, got {chapter_entry['completed']}. "
+        "The per-generation hook must flip segment status to 'completed'."
+    )
+    assert chapter_entry["state"] == "ready", (
+        f"Expected state='ready' after all segments complete, got {chapter_entry['state']!r}"
+    )
+    assert body["overall_progress"] == pytest.approx(1.0), (
+        f"Expected overall_progress=1.0, got {body['overall_progress']}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Fix 2 (high): StoryItem.start_time_ms reflowed to real cumulative ms
+# ---------------------------------------------------------------------------
+
+
+def test_story_items_reflowed_to_real_ms_after_generate(
+    client, analyzed_book, engine_and_session
+):
+    """After a chapter completes, StoryItem.start_time_ms must be real cumulative
+    milliseconds, NOT the order-counter placeholder values (0, 1, 2, ...).
+
+    The mock sets Generation.duration = 1.0s per segment, so after two segments:
+      - Item 0 start_time_ms = 0  (first segment starts at t=0)
+      - Item 1 start_time_ms = 1000  (second segment starts at t=1000ms)
+
+    Before Fix 2, both items would have start_time_ms in {0, 1, 2} (order
+    counters) instead of real millisecond values.
+    """
+    _, TestSession = engine_and_session
+    book_id = analyzed_book["book_id"]
+    chapter_id = analyzed_book["chapter_id"]
+
+    r = client.post(f"/books/{book_id}/chapters/{chapter_id}/generate", json={})
+    assert r.status_code == 202, r.text
+
+    db = TestSession()
+    try:
+        chapter = db.query(Chapter).filter_by(id=chapter_id).first()
+        assert chapter.story_id is not None, "Chapter must have a story after generate"
+
+        items = (
+            db.query(StoryItem)
+            .filter_by(story_id=chapter.story_id)
+            .order_by(StoryItem.start_time_ms)
+            .all()
+        )
+        assert len(items) == 2, f"Expected 2 StoryItems, got {len(items)}"
+
+        times = [item.start_time_ms for item in items]
+
+        # First item must start at 0
+        assert times[0] == 0, (
+            f"First StoryItem must start at 0ms, got {times[0]}"
+        )
+
+        # Second item must start at >= 1000ms (1s duration in mock)
+        assert times[1] >= 1000, (
+            f"Second StoryItem must start at ≥1000ms (real cumulative ms), "
+            f"got {times[1]}. If {times[1]} ∈ {{0,1,2}}, Fix 2 did not run."
+        )
+
+        # Items must be strictly ordered (non-zero gap since each segment has duration>0)
+        assert times[1] > times[0], (
+            f"StoryItems must be in strictly ascending order: {times}"
+        )
+    finally:
+        db.close()
+
+
+def test_story_items_non_overlapping_after_book_generate(
+    client, analyzed_book, engine_and_session
+):
+    """Whole-book generate also reflowed StoryItem times to non-overlapping ms."""
+    _, TestSession = engine_and_session
+    book_id = analyzed_book["book_id"]
+    chapter_id = analyzed_book["chapter_id"]
+
+    r = client.post(f"/books/{book_id}/generate", json={})
+    assert r.status_code == 202, r.text
+
+    db = TestSession()
+    try:
+        chapter = db.query(Chapter).filter_by(id=chapter_id).first()
+        items = (
+            db.query(StoryItem)
+            .filter_by(story_id=chapter.story_id)
+            .order_by(StoryItem.start_time_ms)
+            .all()
+        )
+        assert len(items) >= 1
+        times = [item.start_time_ms for item in items]
+        # All times must be ≥ 0 and in non-descending order
+        assert times == sorted(times), f"Times not sorted: {times}"
+        # If there are multiple items, they must not ALL be order-counter values
+        if len(times) > 1:
+            assert times[-1] > len(times) - 1, (
+                f"Last StoryItem time {times[-1]} looks like an order counter "
+                f"(should be real ms >> {len(times) - 1})"
+            )
+    finally:
+        db.close()
