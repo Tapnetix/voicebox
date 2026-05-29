@@ -204,14 +204,35 @@ function SelectionDialog({
     setSplitting(true);
     setError(null);
     try {
-      await splitMutateAsync({
+      const result = await splitMutateAsync({
         segmentId: segment.id,
         data: { at_offset },
         bookId,
         chapterId,
       });
-      // If dialogue mode with a different character selected, assign the new segment
-      onClose();
+      // If dialogue mode with a different character selected, assign the new second segment
+      if (
+        isDialogue &&
+        localCharacterId !== segment.character_id &&
+        Array.isArray(result) &&
+        result.length >= 2
+      ) {
+        const newSegment = result[1];
+        updateMutate(
+          {
+            segmentId: newSegment.id,
+            bookId,
+            chapterId,
+            data: { character_id: localCharacterId },
+          },
+          {
+            onSuccess: () => onClose(),
+            onError: () => onClose(),
+          },
+        );
+      } else {
+        onClose();
+      }
     } catch (err: any) {
       // Surface B9 400 errors inline
       const msg =

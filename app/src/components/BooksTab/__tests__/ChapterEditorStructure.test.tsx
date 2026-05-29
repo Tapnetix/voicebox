@@ -73,14 +73,33 @@ describe('ChapterEditor structural fixes', () => {
 
   it('splits a selection into its own line and assigns it to a different speaker', async () => {
     const u = userEvent.setup();
+    // splitMutate returns two segments: the original and the new second half
+    splitMutate.mockResolvedValue([{ id: '18', order: 0 }, { id: '18b', order: 1 }]);
     render(<ChapterEditor />);
     // open the per-line ⋯ menu / selection dialog for seg 18
     const seg18Para = screen.getByTestId('seg-18').closest('p')!;
     await u.click(within(seg18Para).getByRole('button', { name: /⋯/ }));
     const dialog = screen.getByTestId('selection-dialog');
-    // click split
+    // Change the speaker to 'mayor' (different from the segment's original 'h')
+    const speakerSelect = within(within(dialog).getByTestId('speaker-row')).getByRole('combobox');
+    await u.selectOptions(speakerSelect, 'mayor');
+    // click split — no DOM selection in test env, so at_offset falls back to 0
     await u.click(within(dialog).getByTestId('split-btn'));
-    expect(splitMutate).toHaveBeenCalled();   // POST /segments/18/split { at_offset }
+    // Assert splitMutate was called with the correct segment id and at_offset=0
+    expect(splitMutate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        segmentId: '18',
+        data: expect.objectContaining({ at_offset: 0 }),
+      }),
+    );
+    // Assert updateMutate was called on the NEW second segment ('18b') with the chosen character
+    expect(updateMutate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        segmentId: '18b',
+        data: expect.objectContaining({ character_id: 'mayor' }),
+      }),
+      expect.anything(),
+    );
   });
 
   it('shows type-toggle with Narration and Dialogue options', async () => {
