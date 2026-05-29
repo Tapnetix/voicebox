@@ -67,6 +67,11 @@ export function useBookSegments(bookId: string | null, chapterId: string | null)
   });
 }
 
+/** Alias for useBookSegments — used by ChapterEditor and its tests. */
+export function useSegments(bookId: string | null, chapterId: string | null) {
+  return useBookSegments(bookId, chapterId);
+}
+
 export function useBookVoiceOptions(bookId: string | null) {
   return useQuery({
     queryKey: bookKeys.voiceOptions(bookId ?? ''),
