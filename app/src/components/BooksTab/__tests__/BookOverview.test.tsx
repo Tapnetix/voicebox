@@ -1,7 +1,7 @@
 /// <reference types="@testing-library/jest-dom/vitest" />
 import '@/i18n';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen, within, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, within, fireEvent, waitFor, act } from '@testing-library/react';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { BookOverview } from '@/components/BooksTab/BookOverview';
 
@@ -50,6 +50,8 @@ let mockCharacters = [
   },
 ];
 
+const mockGenerateChapter = vi.fn().mockResolvedValue({ task_id: 't1', queued_segments: 2 });
+
 vi.mock('@/lib/hooks/useBooks', () => ({
   useBook: () => ({
     data: {
@@ -62,8 +64,8 @@ vi.mock('@/lib/hooks/useBooks', () => ({
       created_at: '2025-01-01T00:00:00Z',
       updated_at: '2025-01-01T00:00:00Z',
       chapters: [
-        { id: 'c1', number: 1, title: 'Descent', word_count: 3410, generation_state: 'ready' },
-        { id: 'c2', number: 2, title: 'The Lower Levels', word_count: 4002, generation_state: 'generating' },
+        { id: 'c1', number: 1, title: 'Descent', word_count: 3410, generation_state: 'none' },
+        { id: 'c2', number: 2, title: 'The Lower Levels', word_count: 4002, generation_state: 'none' },
       ],
     },
     isLoading: false,
@@ -80,6 +82,18 @@ vi.mock('@/lib/hooks/useBooks', () => ({
     mutateAsync: mockDelete,
     isPending: false,
   }),
+  useGenerateChapter: () => ({
+    mutateAsync: mockGenerateChapter,
+    isPending: false,
+  }),
+}));
+
+// useBookProgress mock — by default a no-op; tests can replace mockProgressHandlers
+let mockProgressHandlers: Record<string, ((ev: unknown) => void) | undefined> = {};
+vi.mock('@/lib/hooks/useBookProgress', () => ({
+  useBookProgress: (_bookId: string, handlers: Record<string, ((ev: unknown) => void) | undefined>) => {
+    mockProgressHandlers = handlers;
+  },
 }));
 
 const wrap = (ui: React.ReactNode) => (
@@ -117,6 +131,7 @@ describe('BookOverview', () => {
     vi.clearAllMocks();
     // Reset to default fixture (1 narrator + 1 non-narrator)
     mockCharacters = [...defaultCharacters];
+    mockProgressHandlers = {};
   });
 
   // ── Book header ──────────────────────────────────────────────────────────
@@ -178,9 +193,9 @@ describe('BookOverview', () => {
     const chapterList = screen.getByTestId('chapter-list');
     expect(within(chapterList).getByText(/Descent/)).toBeInTheDocument();
     expect(within(chapterList).getByText(/The Lower Levels/)).toBeInTheDocument();
-    // generation_state badges
-    expect(within(chapterList).getByText('ready')).toBeInTheDocument();
-    expect(within(chapterList).getByText('generating')).toBeInTheDocument();
+    // generation_state badges — both are 'none' in the fixture
+    const noneBadges = within(chapterList).getAllByText('none');
+    expect(noneBadges).toHaveLength(2);
   });
 
   it('chapter list has Edit links', () => {
@@ -347,5 +362,93 @@ describe('BookOverview', () => {
     const summary = screen.getByTestId('book-summary');
     expect(within(summary).getByText(/2 chapter/i)).toBeInTheDocument();
     expect(within(summary).getByText(/2 character/i)).toBeInTheDocument();
+  });
+
+  // ── Generate chapter wiring (D2) ─────────────────────────────────────────
+
+  it('generate-chapter buttons are rendered for each chapter', () => {
+    render(wrap(<BookOverview />));
+    const btn1 = screen.getByTestId('generate-chapter-1');
+    const btn2 = screen.getByTestId('generate-chapter-2');
+    expect(btn1).toBeInTheDocument();
+    expect(btn2).toBeInTheDocument();
+  });
+
+  it('generate-chapter button is enabled when chapter is not generating', () => {
+    render(wrap(<BookOverview />));
+    const btn1 = screen.getByTestId('generate-chapter-1');
+    expect(btn1).not.toBeDisabled();
+  });
+
+  it('clicking generate-chapter-1 calls useGenerateChapter with correct ids', async () => {
+    render(wrap(<BookOverview />));
+    const btn1 = screen.getByTestId('generate-chapter-1');
+    fireEvent.click(btn1);
+    await waitFor(() => {
+      expect(mockGenerateChapter).toHaveBeenCalledWith(
+        expect.objectContaining({ bookId: 'b1', chapterId: 'c1' })
+      );
+    });
+  });
+
+  it('generation_progress event updates chapter row to show "generating n/m"', async () => {
+    render(wrap(<BookOverview />));
+    // Simulate useBookProgress firing a generation_progress event
+    act(() => {
+      mockProgressHandlers.onGenerationProgress?.({
+        type: 'generation_progress',
+        chapter_id: 'c1',
+        completed: 1,
+        errors: 0,
+        total: 3,
+        overall_progress: 0.33,
+      });
+    });
+    // Chapter row should show progress indicator
+    await waitFor(() => {
+      const chapterList = screen.getByTestId('chapter-list');
+      expect(within(chapterList).getByText(/generating 1\/3/i)).toBeInTheDocument();
+    });
+  });
+
+  it('generation_complete event flips chapter row to done badge', async () => {
+    render(wrap(<BookOverview />));
+    // First simulate a progress event to get into generating state
+    act(() => {
+      mockProgressHandlers.onGenerationProgress?.({
+        type: 'generation_progress',
+        chapter_id: 'c1',
+        completed: 2,
+        errors: 0,
+        total: 2,
+        overall_progress: 1.0,
+      });
+    });
+    // Then complete
+    act(() => {
+      mockProgressHandlers.onGenerationComplete?.({
+        type: 'generation_complete',
+        chapter_id: 'c1',
+      });
+    });
+    await waitFor(() => {
+      const chapterList = screen.getByTestId('chapter-list');
+      expect(within(chapterList).getByText('done')).toBeInTheDocument();
+    });
+  });
+
+  it('generate-chapter button is disabled while that chapter is generating', async () => {
+    // Keep the generate mutation pending so the chapter stays in the in-flight
+    // set (the finally-clause that re-enables the button never runs).
+    mockGenerateChapter.mockReturnValueOnce(new Promise(() => {}));
+    render(wrap(<BookOverview />));
+    const btn1 = screen.getByTestId('generate-chapter-1');
+    expect(btn1).not.toBeDisabled();
+    // Click to trigger generation — the row is marked in-flight synchronously.
+    fireEvent.click(btn1);
+    // While the mutation is pending the button must be disabled.
+    await waitFor(() => {
+      expect(btn1).toBeDisabled();
+    });
   });
 });

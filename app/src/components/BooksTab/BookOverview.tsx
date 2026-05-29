@@ -6,12 +6,13 @@
  *
  * Drill-in: char name → voice-editor; chapter Edit → chapter-editor.
  * Cast management (merge + delete) is wired here; split is chapter-editor only.
- * Generate / export / audio-settings are phase-D stubs — rendered but disabled.
+ * Generate button wired in D2: calls chapter-generate endpoint + streams progress via SSE.
  *
- * data-testids match wireframe-03 and are consumed by S3 (c8.spec.ts).
+ * data-testids match wireframe-03 and are consumed by S3 (c8.spec.ts) and S8 (d2.spec.ts).
  */
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -30,10 +31,17 @@ import {
   useBook,
   useCharacters,
   useDeleteCharacter,
+  useGenerateChapter,
   useMergeCharacter,
 } from '@/lib/hooks/useBooks';
+import { useBookProgress } from '@/lib/hooks/useBookProgress';
 import { cn } from '@/lib/utils/cn';
-import type { CharacterResponse, ChapterSummary } from '@/lib/api/types';
+import type {
+  CharacterResponse,
+  ChapterSummary,
+  GenerationProgressEvent,
+  GenerationCompleteEvent,
+} from '@/lib/api/types';
 import { useBooksStore } from '@/stores/booksStore';
 import { toast } from '@/components/ui/use-toast';
 
@@ -145,13 +153,25 @@ function CharCard({ char, selected, onToggle, onDrillIn }: CharCardProps) {
   );
 }
 
+/** Per-chapter progress state derived from SSE events. */
+interface ChapterProgress {
+  /** 'generating' while in-flight; 'done' when complete; undefined otherwise. */
+  status?: 'generating' | 'done';
+  completed: number;
+  total: number;
+  errors: number;
+}
+
 interface ChapterRowProps {
   chapter: ChapterSummary;
   index: number;
   onEdit: (id: string) => void;
+  onGenerate: (chapterId: string) => void;
+  progress?: ChapterProgress;
+  isGenerating?: boolean;
 }
 
-function ChapterRow({ chapter, index, onEdit }: ChapterRowProps) {
+function ChapterRow({ chapter, index, onEdit, onGenerate, progress, isGenerating }: ChapterRowProps) {
   const { t } = useTranslation();
   const rowNum = index + 1;
 
@@ -160,6 +180,27 @@ function ChapterRow({ chapter, index, onEdit }: ChapterRowProps) {
   // `dialogue_count` (a line count, not a word-level percentage). Rendering
   // a fake number here would be misleading. If a future B5 update adds
   // `dialogue_pct`, guard the cell as: `chapter.dialogue_pct != null && (…)`.
+
+  // Derive the effective badge state:
+  // - SSE 'done' overrides stored generation_state → show 'done'
+  // - SSE 'generating' progress → show 'generating n/m'
+  // - Otherwise fall back to stored generation_state
+  const effectiveBadgeState =
+    progress?.status === 'done' ? 'done' :
+    progress?.status === 'generating' ? 'generating' :
+    chapter.generation_state;
+
+  // Badge label including progress counts while in-flight
+  const badgeLabel =
+    progress?.status === 'generating'
+      ? `generating ${progress.completed}/${progress.total}`
+      : effectiveBadgeState;
+
+  // Playable indicator: show play control when done
+  const isDone = effectiveBadgeState === 'done' || chapter.generation_state === 'ready';
+
+  // Show retry affordance when errors exist (non-crash)
+  const hasErrors = (progress?.errors ?? 0) > 0;
 
   return (
     <div className="flex items-center justify-between py-2 px-1 rounded hover:bg-accent/40 transition-colors">
@@ -172,18 +213,40 @@ function ChapterRow({ chapter, index, onEdit }: ChapterRowProps) {
         </div>
       </div>
       <div className="flex items-center gap-1.5">
-        {/* generation_state badge — from B5 rollup value, never recomputed */}
+        {/* generation_state badge — SSE-updated or from B5 rollup */}
         <Badge
           variant="outline"
-          className={genStateBadgeClass(chapter.generation_state)}
+          className={genStateBadgeClass(effectiveBadgeState)}
         >
-          {chapter.generation_state}
+          {badgeLabel}
         </Badge>
-        {/* Phase-D slot: per-chapter generate button */}
+        {/* Play control: shown when chapter is playable (done/ready) */}
+        {isDone && (
+          <span
+            aria-label={`play-chapter-${rowNum}`}
+            className="text-green-400 text-sm select-none"
+          >
+            ▶
+          </span>
+        )}
+        {/* Retry affordance on errors — non-crash indicator */}
+        {hasErrors && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => onGenerate(chapter.id)}
+            data-testid={`retry-chapter-${rowNum}`}
+            className="text-red-400"
+          >
+            {t('books.overview.retryChapter', { defaultValue: 'Retry' })}
+          </Button>
+        )}
+        {/* Generate button — disabled while this chapter is in-flight */}
         <Button
           variant="ghost"
           size="sm"
-          disabled
+          disabled={isGenerating}
+          onClick={() => onGenerate(chapter.id)}
           data-testid={`generate-chapter-${rowNum}`}
         >
           {t('books.overview.generateChapter')}
@@ -206,6 +269,7 @@ function ChapterRow({ chapter, index, onEdit }: ChapterRowProps) {
 
 export function BookOverview() {
   const { t } = useTranslation();
+  const queryClient = useQueryClient();
 
   const selectedBookId = useBooksStore((s) => s.selectedBookId);
   const setView = useBooksStore((s) => s.setView);
@@ -217,11 +281,49 @@ export function BookOverview() {
 
   const mergeCharacter = useMergeCharacter();
   const deleteCharacter = useDeleteCharacter();
+  const generateChapter = useGenerateChapter();
 
   // Cast selection state (non-narrator ids)
   const [selectedCharIds, setSelectedCharIds] = useState<Set<string>>(new Set());
   // Delete confirm dialog
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  // Per-chapter progress from SSE events: chapterId → ChapterProgress
+  const [chapterProgress, setChapterProgress] = useState<Record<string, ChapterProgress>>({});
+  // Set of chapter IDs currently being generated (for disabling the button)
+  const [generatingChapterIds, setGeneratingChapterIds] = useState<Set<string>>(new Set());
+
+  // ── Subscribe to per-book SSE for generation events ──────────────────────
+  useBookProgress(selectedBookId ?? '', {
+    onGenerationProgress: (event: GenerationProgressEvent) => {
+      const { chapter_id, completed, errors, total, overall_progress } = event;
+      setChapterProgress((prev) => ({
+        ...prev,
+        [chapter_id]: { status: 'generating', completed, errors, total },
+      }));
+      // overall_progress available if callers need it in future
+      void overall_progress;
+    },
+    onGenerationComplete: (event: GenerationCompleteEvent) => {
+      const chapter_id = event.chapter_id;
+      if (!chapter_id) return;
+      // Flip row to 'done' playable state
+      setChapterProgress((prev) => ({
+        ...prev,
+        [chapter_id]: { ...(prev[chapter_id] ?? { completed: 0, errors: 0, total: 0 }), status: 'done' },
+      }));
+      // Remove from in-flight set
+      setGeneratingChapterIds((prev) => {
+        const next = new Set(prev);
+        next.delete(chapter_id);
+        return next;
+      });
+      // Invalidate queries so book status + generation-status refresh
+      if (selectedBookId) {
+        queryClient.invalidateQueries({ queryKey: ['books', selectedBookId, 'generation-status'] });
+        queryClient.invalidateQueries({ queryKey: ['books', selectedBookId] });
+      }
+    },
+  });
 
   // ── Derived summary ──────────────────────────────────────────────────────
   const chapters = book?.chapters ?? [];
@@ -252,6 +354,43 @@ export function BookOverview() {
   function handleEditChapter(id: string) {
     setSelectedChapterId(id);
     setView('chapter-editor');
+  }
+
+  async function handleGenerateChapter(chapterId: string) {
+    if (!selectedBookId) return;
+    // Mark as in-flight to disable the button
+    setGeneratingChapterIds((prev) => new Set([...prev, chapterId]));
+    try {
+      await generateChapter.mutateAsync({ bookId: selectedBookId, chapterId });
+    } catch (err: unknown) {
+      // Surface 409 gracefully — book already generating.
+      // apiClient throws plain Error with message like "HTTP error! status: 409",
+      // so we parse the status code out of the message text.
+      const message = err instanceof Error ? err.message : String(err);
+      const statusMatch = message.match(/status:\s*(\d+)/);
+      const status = statusMatch ? parseInt(statusMatch[1], 10) : undefined;
+      if (status === 409) {
+        toast({
+          title: t('books.overview.toast.alreadyGenerating', { defaultValue: 'Already generating' }),
+          description: t('books.overview.toast.alreadyGeneratingDesc', {
+            defaultValue: 'This book is already being generated. Please wait.',
+          }),
+          variant: 'destructive',
+        });
+      } else {
+        toast({
+          title: t('books.overview.toast.generateFailed', { defaultValue: 'Generate failed' }),
+          description: message,
+          variant: 'destructive',
+        });
+      }
+      // On error, remove from in-flight so button re-enables
+      setGeneratingChapterIds((prev) => {
+        const next = new Set(prev);
+        next.delete(chapterId);
+        return next;
+      });
+    }
   }
 
   async function handleMerge() {
@@ -441,6 +580,9 @@ export function BookOverview() {
                   chapter={chapter}
                   index={index}
                   onEdit={handleEditChapter}
+                  onGenerate={handleGenerateChapter}
+                  progress={chapterProgress[chapter.id]}
+                  isGenerating={generatingChapterIds.has(chapter.id)}
                 />
               ))}
             </div>
