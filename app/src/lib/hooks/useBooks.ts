@@ -395,6 +395,31 @@ export function useGenerateBook() {
   });
 }
 
+// ─── Save voice to library ────────────────────────────────────────────────────
+
+/**
+ * Promotes the character's currently-assigned book voice to the global library
+ * (sets is_library=true, book_id=null on the existing profile — not a copy).
+ * On success invalidates voice-options for the book and the global profiles list.
+ */
+export function useSaveVoiceToLibrary(bookId: string | null) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (charId: string) => apiClient.saveVoiceToLibrary(charId),
+    onSuccess: () => {
+      // Refresh voice-options so promoted voice moves to "Your library" in Library tab
+      if (bookId) {
+        queryClient.invalidateQueries({
+          queryKey: bookKeys.voiceOptions(bookId),
+        });
+      }
+      // Refresh global profiles list
+      queryClient.invalidateQueries({ queryKey: ['profiles'] });
+    },
+  });
+}
+
 // ─── Clone voice for character ────────────────────────────────────────────────
 
 /**

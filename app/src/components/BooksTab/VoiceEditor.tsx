@@ -23,11 +23,12 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
-import { useCharacters, usePreviewCharacter, useUpdateCharacter, useVoiceOptions, useCloneVoiceForCharacter } from '@/lib/hooks/useBooks';
+import { useCharacters, usePreviewCharacter, useUpdateCharacter, useVoiceOptions, useCloneVoiceForCharacter, useSaveVoiceToLibrary } from '@/lib/hooks/useBooks';
 import { useAudioRecording } from '@/lib/hooks/useAudioRecording';
 import { apiClient } from '@/lib/api/client';
 import { cn } from '@/lib/utils/cn';
 import { useBooksStore } from '@/stores/booksStore';
+import { toast } from '@/components/ui/use-toast';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -739,6 +740,7 @@ export function VoiceEditor({ initialTab = 'design' }: VoiceEditorProps) {
   // ── Mutations ─────────────────────────────────────────────────────────────
   const preview = usePreviewCharacter();
   const updateCharacter = useUpdateCharacter();
+  const saveToLibrary = useSaveVoiceToLibrary(selectedBookId);
 
   // ── Local state ───────────────────────────────────────────────────────────
   const [designPrompt, setDesignPrompt] = useState(character?.vocal_description ?? '');
@@ -790,6 +792,24 @@ export function VoiceEditor({ initialTab = 'design' }: VoiceEditorProps) {
         onSuccess: () => setView('overview'),
       },
     );
+  }
+
+  function handleSaveToLibrary() {
+    if (!character) return;
+    saveToLibrary.mutate(character.id, {
+      onSuccess: () => {
+        toast({
+          title: t('books.voiceEditor.saveToLibrarySuccess'),
+        });
+      },
+      onError: (err) => {
+        toast({
+          title: t('books.voiceEditor.saveToLibraryError'),
+          description: err instanceof Error ? err.message : undefined,
+          variant: 'destructive',
+        });
+      },
+    });
   }
 
   // ── Clone tab actions ─────────────────────────────────────────────────────
@@ -1082,12 +1102,18 @@ export function VoiceEditor({ initialTab = 'design' }: VoiceEditorProps) {
 
             {/* Action row — save-to-library + preview + assign (Design tab only) */}
             <div className="flex items-center justify-between mt-3">
-              {/* save-to-library-btn — C13 wires the action */}
+              {/* save-to-library-btn — promotes the character's assigned voice to the global library */}
               <Button
                 data-testid="save-to-library-btn"
                 variant="ghost"
                 size="sm"
-                title={t('books.voiceEditor.saveToLibraryTitle')}
+                title={
+                  character.profile_id || character.voice_type
+                    ? t('books.voiceEditor.saveToLibraryTitle')
+                    : t('books.voiceEditor.saveToLibraryNoVoice')
+                }
+                disabled={!character.profile_id && !character.voice_type}
+                onClick={handleSaveToLibrary}
               >
                 ★ {t('books.voiceEditor.saveToLibrary')}
               </Button>

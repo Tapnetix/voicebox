@@ -77,6 +77,7 @@ vi.mock('@/lib/hooks/useBooks', () => ({
   useUpdateCharacter: () => ({ mutate: updateMutate, isPending: false }),
   useVoiceOptions: () => ({ data: { library: [], book: [], presets: [] } }),
   useCloneVoiceForCharacter: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useSaveVoiceToLibrary: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 
 // useAudioRecording needs PlatformProvider — mock it for unit tests
