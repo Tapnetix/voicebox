@@ -372,7 +372,11 @@ export function BookOverview() {
               <Button disabled data-testid="generate-all-btn">
                 {t('books.overview.generateAll')}
               </Button>
-              <Button variant="outline" disabled data-testid="export-btn">
+              <Button
+                variant="outline"
+                data-testid="export-btn"
+                onClick={() => setView('export')}
+              >
                 {t('books.overview.export')}
               </Button>
               <Button variant="ghost" disabled data-testid="audio-settings-btn">
