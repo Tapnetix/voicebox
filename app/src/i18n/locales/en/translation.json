@@ -81,6 +81,46 @@
       "stageDone": "done",
       "stageRunning": "running",
       "stagePending": "pending"
+    },
+    "overview": {
+      "generateAll": "Generate all",
+      "export": "Export…",
+      "audioSettings": "Audio settings",
+      "cast": "Cast",
+      "castHint": "Tick boxes to merge or delete. Click a character to set its voice. (To split, use the chapter editor.)",
+      "chapters": "Chapters",
+      "merge": "Merge",
+      "delete": "Delete",
+      "editChapter": "Edit",
+      "generateChapter": "Generate",
+      "summary": {
+        "chapters_one": "{{count}} chapter",
+        "chapters_other": "{{count}} chapters",
+        "characters_one": "{{count}} character",
+        "characters_other": "{{count}} characters",
+        "pctDialogue": "{{pct}}% dialogue",
+        "runtime": "est. {{h}}h {{m}}m"
+      },
+      "generationState": {
+        "none": "none",
+        "ready": "ready",
+        "partial": "partial",
+        "error": "errors"
+      },
+      "confidence": {
+        "high": "high",
+        "medium": "medium",
+        "low": "low"
+      },
+      "deleteDialog": {
+        "title": "Delete character",
+        "description": "This will reassign all of this character's lines to the Narrator. This cannot be undone.",
+        "confirm": "Delete"
+      },
+      "toast": {
+        "mergeFailed": "Merge failed",
+        "deleteFailed": "Delete failed"
+      }
     }
   },
   "captures": {

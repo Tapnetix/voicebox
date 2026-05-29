@@ -54,6 +54,11 @@ export function useBookCharacters(bookId: string | null) {
   });
 }
 
+/** Alias for useBookCharacters — used by BookOverview and its tests. */
+export function useCharacters(bookId: string | null) {
+  return useBookCharacters(bookId);
+}
+
 export function useBookSegments(bookId: string | null, chapterId: string | null) {
   return useQuery({
     queryKey: bookKeys.segments(bookId ?? '', chapterId ?? ''),
