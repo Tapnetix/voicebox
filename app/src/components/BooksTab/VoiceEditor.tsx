@@ -1097,58 +1097,58 @@ export function VoiceEditor({ initialTab = 'design' }: VoiceEditorProps) {
 
                 {/* Shared preview-player row */}
                 <PreviewPlayer audioSrc={previewAudioSrc} />
+
+                {/* Action row — save-to-library + preview + assign (Design tab only) */}
+                <div className="flex items-center justify-between mt-3">
+                  {/* save-to-library-btn — promotes the character's assigned voice to the global library */}
+                  <Button
+                    data-testid="save-to-library-btn"
+                    variant="ghost"
+                    size="sm"
+                    title={
+                      character.profile_id || character.voice_type
+                        ? t('books.voiceEditor.saveToLibraryTitle')
+                        : t('books.voiceEditor.saveToLibraryNoVoice')
+                    }
+                    disabled={!character.profile_id && !character.voice_type}
+                    onClick={handleSaveToLibrary}
+                  >
+                    ★ {t('books.voiceEditor.saveToLibrary')}
+                  </Button>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      data-testid="preview-voice-btn"
+                      variant="secondary"
+                      size="sm"
+                      onClick={handlePreview}
+                      disabled={preview.isPending}
+                    >
+                      {preview.isPending
+                        ? t('books.voiceEditor.generating')
+                        : t('books.voiceEditor.generatePreview')}
+                    </Button>
+                    <Button
+                      data-testid="assign-voice-btn"
+                      size="sm"
+                      onClick={handleAssign}
+                      disabled={updateCharacter.isPending}
+                    >
+                      {t('books.voiceEditor.assignBack')}
+                    </Button>
+                  </div>
+                </div>
+
+                {/* Explainer note */}
+                <p className="text-xs text-muted-foreground mt-2" data-testid="assign-explainer">
+                  <strong>{t('books.voiceEditor.assignExplainerAssign')}</strong>{' '}
+                  {t('books.voiceEditor.assignExplainerAssignNote')}{' '}
+                  <strong>{t('books.voiceEditor.assignExplainerPreview')}</strong>{' '}
+                  {t('books.voiceEditor.assignExplainerPreviewNote')}{' '}
+                  <strong>{t('books.voiceEditor.assignExplainerSave')}</strong>{' '}
+                  {t('books.voiceEditor.assignExplainerSaveNote')}
+                </p>
               </TabsContent>
             </Tabs>
-
-            {/* Action row — save-to-library + preview + assign (Design tab only) */}
-            <div className="flex items-center justify-between mt-3">
-              {/* save-to-library-btn — promotes the character's assigned voice to the global library */}
-              <Button
-                data-testid="save-to-library-btn"
-                variant="ghost"
-                size="sm"
-                title={
-                  character.profile_id || character.voice_type
-                    ? t('books.voiceEditor.saveToLibraryTitle')
-                    : t('books.voiceEditor.saveToLibraryNoVoice')
-                }
-                disabled={!character.profile_id && !character.voice_type}
-                onClick={handleSaveToLibrary}
-              >
-                ★ {t('books.voiceEditor.saveToLibrary')}
-              </Button>
-              <div className="flex items-center gap-2">
-                <Button
-                  data-testid="preview-voice-btn"
-                  variant="secondary"
-                  size="sm"
-                  onClick={handlePreview}
-                  disabled={preview.isPending}
-                >
-                  {preview.isPending
-                    ? t('books.voiceEditor.generating')
-                    : t('books.voiceEditor.generatePreview')}
-                </Button>
-                <Button
-                  data-testid="assign-voice-btn"
-                  size="sm"
-                  onClick={handleAssign}
-                  disabled={updateCharacter.isPending}
-                >
-                  {t('books.voiceEditor.assignBack')}
-                </Button>
-              </div>
-            </div>
-
-            {/* Explainer note */}
-            <p className="text-xs text-muted-foreground mt-2" data-testid="assign-explainer">
-              <strong>{t('books.voiceEditor.assignExplainerAssign')}</strong>{' '}
-              {t('books.voiceEditor.assignExplainerAssignNote')}{' '}
-              <strong>{t('books.voiceEditor.assignExplainerPreview')}</strong>{' '}
-              {t('books.voiceEditor.assignExplainerPreviewNote')}{' '}
-              <strong>{t('books.voiceEditor.assignExplainerSave')}</strong>{' '}
-              {t('books.voiceEditor.assignExplainerSaveNote')}
-            </p>
           </CardContent>
         </Card>
       </div>
