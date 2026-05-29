@@ -208,37 +208,84 @@ class TestExportStart:
         updated = temp_db.query(Book).filter_by(id=book.id).first()
         assert updated.status == "exporting"
 
-    def test_options_passed_through(self, client, temp_db, monkeypatch):
-        """All request options (format, bitrate, title, author) arrive at export_book."""
-        book = _make_book(temp_db, status="ready")
-        _make_chapter_with_audio(temp_db, book.id)
+    @pytest.mark.asyncio
+    async def test_options_passed_through(self, tmp_path, engine_and_session):
+        """All request options (format, bitrate, title, author) arrive at export_book.
+
+        Drives run_export_task directly and captures the options dict handed to
+        export_book — the earlier version closed the background coroutine before
+        it ran, so this assertion never executed (vacuous test).
+        """
+        _, TestSession = engine_and_session
+
+        db = TestSession()
+        book = Book(
+            id=str(uuid.uuid4()),
+            title="My Book",
+            source_format="epub",
+            status="exporting",
+        )
+        db.add(book)
+        db.flush()
+        chapter = Chapter(
+            id=str(uuid.uuid4()), book_id=book.id, number=1,
+            title="Ch1", raw_text="X", word_count=1,
+        )
+        db.add(chapter)
+        db.flush()
+        gen = Generation(
+            id=str(uuid.uuid4()), profile_id="dummy", text="X",
+            audio_path="/fake/x.wav", status="completed",
+        )
+        db.add(gen)
+        db.flush()
+        char = BookCharacter(
+            id=str(uuid.uuid4()), book_id=book.id, name="Narrator", is_narrator=True,
+        )
+        db.add(char)
+        db.flush()
+        seg = BookSegment(
+            id=str(uuid.uuid4()), chapter_id=chapter.id, character_id=char.id,
+            type="narration", order=0, text="X",
+            generation_id=gen.id, audio_status="completed",
+        )
+        db.add(seg)
+        db.commit()
 
         captured_options = {}
+        fake_out = tmp_path / "My_Book.m4b"
+        fake_out.write_bytes(b"FAKE")
+
+        from backend.services import book_export_api
 
         def fake_export_book(chapters, output_dir, options=None, progress_callback=None):
             captured_options.update(options or {})
-            return ("/tmp/x.m4b", "x.m4b")
+            return (str(fake_out), "My_Book.m4b")
 
-        monkeypatch.setattr(
-            "backend.services.book_export_api.audiobook_export.export_book",
-            fake_export_book,
-        )
+        with (
+            patch.object(book_export_api.book_events, "publish"),
+            patch.object(
+                book_export_api.audiobook_export, "export_book",
+                side_effect=fake_export_book,
+            ),
+        ):
+            await book_export_api.run_export_task(
+                book_id=book.id,
+                options={
+                    "format": "m4b",
+                    "bitrate": "128k",
+                    "title": "My Book",
+                    "author": "Jane Doe",
+                },
+                db=db,
+            )
+        db.close()
 
-        # We need a running event loop for create_background_task
-        monkeypatch.setattr(
-            "backend.services.book_export_api.task_queue.create_background_task",
-            lambda coro: coro.close(),
-        )
-
-        client.post(
-            f"/books/{book.id}/export",
-            json={
-                "format": "m4b",
-                "bitrate": "128k",
-                "title": "My Book",
-                "author": "Jane Doe",
-            },
-        )
+        # export_book must actually have been called with the forwarded options.
+        assert captured_options.get("format") == "m4b"
+        assert captured_options.get("bitrate") == "128k"
+        assert captured_options.get("title") == "My Book"
+        assert captured_options.get("author") == "Jane Doe"
 
 
 # ---------------------------------------------------------------------------
@@ -573,4 +620,67 @@ class TestExportBackgroundTask:
         db.expire_all()
         updated = db.query(Book).filter_by(id=book.id).first()
         assert updated.status == "ready"
+        db.close()
+
+    @pytest.mark.asyncio
+    async def test_status_set_to_error_on_export_failure(self, tmp_path, engine_and_session):
+        """If export_book raises, book.status settles to 'error' (never stuck on 'exporting')."""
+        _, TestSession = engine_and_session
+
+        db = TestSession()
+        book = Book(
+            id=str(uuid.uuid4()),
+            title="Fail Test",
+            source_format="epub",
+            status="exporting",
+        )
+        db.add(book)
+        db.flush()
+        chapter = Chapter(
+            id=str(uuid.uuid4()), book_id=book.id, number=1,
+            title="Ch1", raw_text="X", word_count=1,
+        )
+        db.add(chapter)
+        db.flush()
+        gen = Generation(
+            id=str(uuid.uuid4()), profile_id="dummy", text="X",
+            audio_path="/fake/x.wav", status="completed",
+        )
+        db.add(gen)
+        db.flush()
+        char = BookCharacter(
+            id=str(uuid.uuid4()), book_id=book.id, name="Narrator", is_narrator=True,
+        )
+        db.add(char)
+        db.flush()
+        seg = BookSegment(
+            id=str(uuid.uuid4()), chapter_id=chapter.id, character_id=char.id,
+            type="narration", order=0, text="X",
+            generation_id=gen.id, audio_status="completed",
+        )
+        db.add(seg)
+        db.commit()
+
+        from backend.services import book_export_api
+
+        with (
+            patch.object(book_export_api.book_events, "publish"),
+            patch.object(
+                book_export_api.audiobook_export, "export_book",
+                side_effect=RuntimeError("ffmpeg blew up"),
+            ),
+        ):
+            # run_export_task must swallow the failure and settle the status,
+            # not propagate and leave the book stuck in 'exporting'.
+            await book_export_api.run_export_task(
+                book_id=book.id,
+                options={"format": "m4b"},
+                db=db,
+            )
+
+        db.expire_all()
+        updated = db.query(Book).filter_by(id=book.id).first()
+        assert updated.status == "error", (
+            f"expected status 'error' after export failure, got {updated.status!r}"
+        )
         db.close()

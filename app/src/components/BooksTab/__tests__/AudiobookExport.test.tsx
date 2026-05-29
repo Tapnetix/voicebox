@@ -152,9 +152,9 @@ describe('AudiobookExport', () => {
       });
     });
 
-    // Status section should reflect that exporting is in progress
+    // Status section must reflect the actual progress value (50%), not merely exist.
     const status = screen.getByTestId('export-status');
-    expect(status).toBeInTheDocument();
+    expect(status).toHaveTextContent('50%');
   });
 
   it('shows error message in export-status on error event', async () => {
