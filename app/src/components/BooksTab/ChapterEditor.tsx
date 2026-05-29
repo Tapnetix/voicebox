@@ -167,9 +167,7 @@ function SegmentLine({
         data: { character_id: charId },
         bookId,
         chapterId,
-        // Surface-level key so tests can match: character_id at top level
-        character_id: charId,
-      } as Parameters<typeof updateMutate>[0],
+      },
       {
         onSuccess: () => {
           setPopoverOpen(false);

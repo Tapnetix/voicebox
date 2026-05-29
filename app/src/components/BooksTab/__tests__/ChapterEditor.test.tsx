@@ -20,6 +20,7 @@ vi.mock('@/lib/hooks/useBooks', () => ({
       { id: 'n', name: 'Narrator', is_narrator: true, color: '#6d8bff' },
       { id: 'm', name: 'Mira', color: '#34d399', confidence: 0.9 },
       { id: 'h', name: 'Holt', color: '#fbbf24', confidence: 0.8 },
+      { id: 'lo', name: 'LowConf', color: '#ff0000', confidence: 0.5 },
     ],
   }),
   useSegments: () => ({
@@ -38,10 +39,20 @@ vi.mock('@/lib/hooks/useBooks', () => ({
         id: '12',
         order: 1,
         type: 'dialogue',
-        text: '“We can’t keep going down,”',
+        text: `”We can't keep going down,”`,
         character_id: 'm',
         character_name: 'Mira',
         emotion: 'tense',
+        audio: { status: 'none' },
+      },
+      {
+        id: '13',
+        order: 2,
+        type: 'dialogue',
+        text: '”I agree,” said LowConf.',
+        character_id: 'lo',
+        character_name: 'LowConf',
+        emotion: 'worried',
         audio: { status: 'none' },
       },
     ],
@@ -63,7 +74,7 @@ describe('ChapterEditor', () => {
     // Narration line is present
     expect(bookView).toHaveTextContent('The corridor lights flickered.');
     // Dialogue line is present
-    expect(bookView).toHaveTextContent('We can’t keep going down');
+    expect(bookView).toHaveTextContent(`We can't keep going down`);
   });
 
   it('renders seg-{id} spans for each segment', () => {
@@ -133,20 +144,24 @@ describe('ChapterEditor', () => {
     expect(dropdown).toBeInTheDocument();
     // Click Holt in the dropdown
     await u.click(within(dropdown).getByText('Holt'));
-    // useUpdateSegment.mutate should be called with character_id: 'h'
+    // useUpdateSegment.mutate should be called with data.character_id: 'h'
     expect(updateMutate).toHaveBeenCalledWith(
-      expect.objectContaining({ character_id: 'h' }),
+      expect.objectContaining({ data: expect.objectContaining({ character_id: 'h' }) }),
       expect.anything(),
     );
   });
 
   it('review-rail shows jump-{id} buttons for low-confidence lines', () => {
     render(<ChapterEditor />);
-    // The review rail shows jump buttons for segments with low confidence
-    const rail = screen.getByTestId('review-rail');
-    // With confidence 0.8 and 0.9 for Mira/Holt, they are above threshold
-    // But the rail should at least render (even if empty)
-    expect(rail).toBeInTheDocument();
+    // Segment 13 has character 'lo' with confidence 0.5, below the 0.7 threshold
+    // The review rail should render a jump button for it
+    expect(screen.getByTestId('jump-13')).toBeInTheDocument();
+  });
+
+  it('narration segment has no speaker chip', () => {
+    render(<ChapterEditor />);
+    // Segment 11 is narration — it should NOT have a speaker chip
+    expect(screen.queryByTestId('speaker-chip-11')).not.toBeInTheDocument();
   });
 
   it('by-character filter shows only lines for a selected character', async () => {
