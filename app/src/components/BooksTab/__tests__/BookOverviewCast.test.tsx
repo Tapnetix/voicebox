@@ -14,10 +14,15 @@
  */
 /// <reference types="@testing-library/jest-dom/vitest" />
 import '@/i18n';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, screen, within, fireEvent, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { BookOverview } from '@/components/BooksTab/BookOverview';
+
+const wrap = (ui: React.ReactNode) => (
+  <QueryClientProvider client={new QueryClient()}>{ui}</QueryClientProvider>
+);
 
 // ─── Mocks ────────────────────────────────────────────────────────────────────
 
@@ -89,6 +94,14 @@ vi.mock('@/lib/hooks/useBooks', () => ({
     mutateAsync: deleteMutate,
     isPending: false,
   }),
+  useGenerateChapter: () => ({
+    mutateAsync: vi.fn().mockResolvedValue(undefined),
+    isPending: false,
+  }),
+}));
+
+vi.mock('@/lib/hooks/useBookProgress', () => ({
+  useBookProgress: () => undefined,
 }));
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
@@ -99,7 +112,7 @@ describe('BookOverview cast management', () => {
   });
 
   it('renders cast-roster with 2 non-narrator checkboxes (narrator has none)', () => {
-    render(<BookOverview />);
+    render(wrap(<BookOverview />));
     const roster = screen.getByTestId('cast-roster');
     const checkboxes = within(roster).getAllByRole('checkbox');
     // Only non-narrator characters (m1, m2) get checkboxes; Narrator does not
@@ -107,7 +120,7 @@ describe('BookOverview cast management', () => {
   });
 
   it('merge-btn is disabled when fewer than 2 characters are selected', () => {
-    render(<BookOverview />);
+    render(wrap(<BookOverview />));
     expect(screen.getByTestId('merge-btn')).toBeDisabled();
 
     // Select only 1 → still disabled
@@ -119,7 +132,7 @@ describe('BookOverview cast management', () => {
 
   it('merges two selected characters via the B8 endpoint (survivor = first selected)', async () => {
     const u = userEvent.setup();
-    render(<BookOverview />);
+    render(wrap(<BookOverview />));
 
     const roster = screen.getByTestId('cast-roster');
     const checkboxes = within(roster).getAllByRole('checkbox');
@@ -145,12 +158,12 @@ describe('BookOverview cast management', () => {
   });
 
   it('delete-btn is disabled when no character is selected', () => {
-    render(<BookOverview />);
+    render(wrap(<BookOverview />));
     expect(screen.getByTestId('delete-btn')).toBeDisabled();
   });
 
   it('delete-btn enables with exactly 1 selected and merge-btn stays disabled', () => {
-    render(<BookOverview />);
+    render(wrap(<BookOverview />));
     const roster = screen.getByTestId('cast-roster');
     const [first] = within(roster).getAllByRole('checkbox');
     fireEvent.click(first); // select m1 only
@@ -160,7 +173,7 @@ describe('BookOverview cast management', () => {
   });
 
   it('delete-btn opens confirm dialog and calls useDeleteCharacter on confirm', async () => {
-    render(<BookOverview />);
+    render(wrap(<BookOverview />));
     const roster = screen.getByTestId('cast-roster');
     const [first] = within(roster).getAllByRole('checkbox');
     fireEvent.click(first); // select m1

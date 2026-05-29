@@ -8,13 +8,44 @@ import { ChapterEditor } from '@/components/BooksTab/ChapterEditor';
 // ─── Mocks ────────────────────────────────────────────────────────────────────
 
 const updateMutate = vi.fn();
+const regenerateMutate = vi.fn();
 
 vi.mock('@/stores/booksStore', () => ({
   useBooksStore: (s: any) =>
-    s({ selectedBookId: 'b1', selectedChapterId: 'c1', setView: vi.fn() }),
+    s({
+      selectedBookId: 'b1',
+      selectedChapterId: 'c1',
+      setView: vi.fn(),
+      readAlongPlaying: false,
+      currentSpokenSegmentId: null,
+      setReadAlong: vi.fn(),
+      setCurrentSpokenSegment: vi.fn(),
+    }),
+}));
+
+vi.mock('@/stores/storyStore', () => ({
+  useStoryStore: (s: any) =>
+    s({
+      isPlaying: false,
+      currentTimeMs: 0,
+      playbackStoryId: null,
+      play: vi.fn(),
+      pause: vi.fn(),
+      stop: vi.fn(),
+      setActiveStory: vi.fn(),
+    }),
+}));
+
+vi.mock('@/lib/hooks/useStories', () => ({
+  useStory: () => ({ data: null }),
+}));
+
+vi.mock('@/lib/hooks/useStoryPlayback', () => ({
+  useStoryPlayback: vi.fn(),
 }));
 
 vi.mock('@/lib/hooks/useBooks', () => ({
+  useBook: () => ({ data: null }),
   useCharacters: () => ({
     data: [
       { id: 'n', name: 'Narrator', is_narrator: true, color: '#6d8bff' },
@@ -33,7 +64,7 @@ vi.mock('@/lib/hooks/useBooks', () => ({
         character_id: 'n',
         character_name: 'Narrator',
         emotion: 'neutral',
-        audio: { status: 'none' },
+        audio: { status: 'completed', generation_id: 'g11' },
       },
       {
         id: '12',
@@ -43,7 +74,7 @@ vi.mock('@/lib/hooks/useBooks', () => ({
         character_id: 'm',
         character_name: 'Mira',
         emotion: 'tense',
-        audio: { status: 'none' },
+        audio: { status: 'completed', generation_id: 'g12' },
       },
       {
         id: '13',
@@ -58,8 +89,10 @@ vi.mock('@/lib/hooks/useBooks', () => ({
     ],
   }),
   useUpdateSegment: () => ({ mutate: updateMutate, isPending: false }),
+  usePreviewSegment: () => ({ mutate: vi.fn(), isPending: false }),
   useSplitSegment: () => ({ mutateAsync: vi.fn().mockResolvedValue([]), isPending: false }),
   useMergeSegments: () => ({ mutate: vi.fn(), isPending: false }),
+  useRegenerateSegment: () => ({ mutate: regenerateMutate, isPending: false }),
 }));
 
 // ─── Test suite ───────────────────────────────────────────────────────────────
@@ -108,9 +141,11 @@ describe('ChapterEditor', () => {
     expect(within(toolbar).getByText(/Flagged/)).toBeInTheDocument();
   });
 
-  it('renders readalong-btn (present, inert — wired by D5)', () => {
+  it('renders readalong-btn (present, enabled — wired by D5)', () => {
     render(<ChapterEditor />);
-    expect(screen.getByTestId('readalong-btn')).toBeInTheDocument();
+    const btn = screen.getByTestId('readalong-btn');
+    expect(btn).toBeInTheDocument();
+    expect(btn).not.toBeDisabled();
   });
 
   it('renders review-rail with review-progress', () => {
@@ -178,5 +213,42 @@ describe('ChapterEditor', () => {
     // Only Mira's dialogue should appear
     expect(screen.queryByTestId('seg-11')).not.toBeInTheDocument();
     expect(screen.getByTestId('seg-12')).toBeInTheDocument();
+  });
+
+  it('⋯ menu shows Regenerate button for a completed segment and calls useRegenerateSegment', async () => {
+    const u = userEvent.setup();
+    render(<ChapterEditor />);
+    // Segment 11 has audio.status='completed' — open its ⋯ menu
+    const chapterText = screen.getByTestId('chapter-text');
+    const firstPara = within(chapterText).getAllByRole('paragraph')[0];
+    const menuBtn = within(firstPara).getByRole('button', { name: '⋯' });
+    await u.click(menuBtn);
+    // The selection dialog should show the Regenerate button
+    const dialog = screen.getByTestId('selection-dialog');
+    const regenBtn = within(dialog).getByTestId('regenerate-btn-11');
+    expect(regenBtn).toBeInTheDocument();
+    expect(regenBtn).toHaveTextContent(/Regenerate/);
+    // Clicking it calls regenerateMutate with the correct segmentId
+    await u.click(regenBtn);
+    expect(regenerateMutate).toHaveBeenCalledWith(
+      expect.objectContaining({ segmentId: '11' }),
+      expect.anything(),
+    );
+  });
+
+  it('⋯ menu does NOT show Regenerate for a segment with audio.status=none', async () => {
+    const u = userEvent.setup();
+    render(<ChapterEditor />);
+    // Segment 13 has audio.status='none' — open its ⋯ menu
+    const chapterText = screen.getByTestId('chapter-text');
+    const seg13Para = within(chapterText)
+      .getAllByRole('paragraph')
+      .find((p) => p.querySelector('[data-testid="seg-13"]'));
+    expect(seg13Para).toBeTruthy();
+    const menuBtn = within(seg13Para!).getByRole('button', { name: '⋯' });
+    await u.click(menuBtn);
+    // The regenerate button should NOT appear for a never-generated segment
+    const dialog = screen.getByTestId('selection-dialog');
+    expect(within(dialog).queryByTestId('regenerate-btn-13')).not.toBeInTheDocument();
   });
 });

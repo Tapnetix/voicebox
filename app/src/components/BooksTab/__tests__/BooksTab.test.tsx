@@ -25,6 +25,9 @@ vi.mock('@/components/BooksTab/VoiceEditor', () => ({
 vi.mock('@/components/BooksTab/ChapterEditor', () => ({
   ChapterEditor: () => <div data-testid="stub-chapter-editor" />,
 }));
+vi.mock('@/components/BooksTab/AudiobookExport', () => ({
+  AudiobookExport: () => <div data-testid="stub-audiobook-export" />,
+}));
 
 describe('BooksTab view router', () => {
   beforeEach(() => {
@@ -67,10 +70,10 @@ describe('BooksTab view router', () => {
     expect(screen.getByTestId('stub-chapter-editor')).toBeInTheDocument();
   });
 
-  it('renders nothing (null) when view is "export"', () => {
+  it('renders AudiobookExport when view is "export"', () => {
     useBooksStore.getState().setView('export');
-    const { container } = render(<BooksTab />);
-    expect(container.firstChild).toBeNull();
+    render(<BooksTab />);
+    expect(screen.getByTestId('stub-audiobook-export')).toBeInTheDocument();
   });
 
   it('renders exactly one child per active view — no cross-contamination', () => {

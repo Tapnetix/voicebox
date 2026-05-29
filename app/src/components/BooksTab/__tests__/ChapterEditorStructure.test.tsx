@@ -10,10 +10,41 @@ const updateMutate = vi.fn();
 const mergeMutate = vi.fn();
 
 vi.mock('@/stores/booksStore', () => ({
-  useBooksStore: (s: any) => s({ selectedBookId: 'b1', selectedChapterId: 'c1', setView: vi.fn() }),
+  useBooksStore: (s: any) =>
+    s({
+      selectedBookId: 'b1',
+      selectedChapterId: 'c1',
+      setView: vi.fn(),
+      readAlongPlaying: false,
+      currentSpokenSegmentId: null,
+      setReadAlong: vi.fn(),
+      setCurrentSpokenSegment: vi.fn(),
+    }),
+}));
+
+vi.mock('@/stores/storyStore', () => ({
+  useStoryStore: (s: any) =>
+    s({
+      isPlaying: false,
+      currentTimeMs: 0,
+      playbackStoryId: null,
+      play: vi.fn(),
+      pause: vi.fn(),
+      stop: vi.fn(),
+      setActiveStory: vi.fn(),
+    }),
+}));
+
+vi.mock('@/lib/hooks/useStories', () => ({
+  useStory: () => ({ data: null }),
+}));
+
+vi.mock('@/lib/hooks/useStoryPlayback', () => ({
+  useStoryPlayback: vi.fn(),
 }));
 
 vi.mock('@/lib/hooks/useBooks', () => ({
+  useBook: () => ({ data: null }),
   useCharacters: () => ({
     data: [
       { id: 'h', name: 'Holt', color: '#fbbf24' },
@@ -45,6 +76,7 @@ vi.mock('@/lib/hooks/useBooks', () => ({
     ],
   }),
   useUpdateSegment: () => ({ mutate: updateMutate, isPending: false }),
+  usePreviewSegment: () => ({ mutate: vi.fn(), isPending: false }),
   useSplitSegment: () => ({ mutateAsync: splitMutate, isPending: false }),
   useMergeSegments: () => ({ mutate: mergeMutate, isPending: false }),
 }));
