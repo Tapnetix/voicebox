@@ -54,7 +54,7 @@ function BookCard({ book, onSelect }: BookCardProps) {
             <div className="flex flex-wrap gap-1.5 mt-2">
               <Badge variant={statusVariant(book.status)}>{statusLabel}</Badge>
               <Badge variant="secondary">
-                {book.chapter_count} {book.chapter_count === 1 ? 'ch' : 'ch'}
+                {t('books.chapters', { count: book.chapter_count })}
               </Badge>
             </div>
           </div>

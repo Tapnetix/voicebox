@@ -28,6 +28,7 @@
     "subtitle": "Your audiobook projects.",
     "empty": "Import an EPUB, FB2, TXT, or PDF to create your first audiobook.",
     "import": "+ Import book",
+    "chapters": "{{count}} ch",
     "status": {
       "imported": "imported",
       "analyzing": "analyzing",
