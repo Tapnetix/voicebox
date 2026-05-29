@@ -2,7 +2,13 @@ import { defineConfig } from 'vitest/config';
 import path from 'node:path';
 
 export default defineConfig({
-  resolve: { alias: { '@': path.resolve(__dirname, 'src') } },
+  resolve: {
+    alias: {
+      '@': path.resolve(__dirname, 'src'),
+      // Stub out the virtual changelog module that requires a Vite plugin
+      'virtual:changelog': path.resolve(__dirname, 'src/__mocks__/virtual-changelog.ts'),
+    },
+  },
   test: {
     environment: 'jsdom',
     globals: true,
