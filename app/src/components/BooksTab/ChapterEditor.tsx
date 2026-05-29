@@ -29,6 +29,7 @@ import {
   useSplitSegment,
   useMergeSegments,
 } from '@/lib/hooks/useBooks';
+import { SegmentDeliveryControl } from './SegmentDeliveryControl';
 import type { CharacterResponse, SegmentResponse } from '@/lib/api/types';
 import { useBooksStore } from '@/stores/booksStore';
 
@@ -82,27 +83,7 @@ function SpeakerChip({ segmentId, name, color }: SpeakerChipProps) {
   );
 }
 
-interface EmotionPillProps {
-  segmentId: string;
-  emotion: string;
-}
-
-/**
- * INERT slot — emotion-pill is rendered here so D4 can wire it without restructuring.
- * D4 task wires the delivery/tone popover interaction.
- */
-function EmotionPill({ segmentId, emotion }: EmotionPillProps) {
-  return (
-    <span
-      data-testid={`emotion-${segmentId}`}
-      className="ml-1 cursor-pointer rounded px-1.5 py-0.5 text-xs text-muted-foreground hover:bg-muted"
-      title="Delivery / tone — wired by D4"
-      // D4 wires the onClick here
-    >
-      {emotion} ▾
-    </span>
-  );
-}
+// EmotionPill is now handled by SegmentDeliveryControl (D4).
 
 interface ReassignDropdownProps {
   segmentId: string;
@@ -604,8 +585,15 @@ function SegmentLine({
           />
         </PopoverContent>
       </Popover>
-      {/* INERT slot — D4 wires the emotion/delivery interaction */}
-      <EmotionPill segmentId={segment.id} emotion={segment.emotion} />
+      {/* D4: emotion pill + delivery/tone popover */}
+      <SegmentDeliveryControl
+        segmentId={segment.id}
+        bookId={bookId}
+        chapterId={chapterId}
+        emotion={segment.emotion}
+        emotionIntensity={segment.emotion_intensity ?? 0.5}
+        delivery={segment.delivery}
+      />
       {/* INERT slot — D5 wires per-line read-along ♪ highlight */}
       {menuAndDialog}
     </>
