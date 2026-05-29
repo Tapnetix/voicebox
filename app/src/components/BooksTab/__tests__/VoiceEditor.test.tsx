@@ -75,6 +75,7 @@ vi.mock('@/lib/hooks/useBooks', () => ({
     isPending: false,
   }),
   useUpdateCharacter: () => ({ mutate: updateMutate, isPending: false }),
+  useVoiceOptions: () => ({ data: { library: [], book: [], presets: [] } }),
 }));
 
 // ─── API client mock ──────────────────────────────────────────────────────────
@@ -276,11 +277,11 @@ describe('VoiceEditor (Design)', () => {
     expect(playBtn).toBeDisabled();
   });
 
-  it('Library tab body shows placeholder text', async () => {
+  it('Library tab body shows the voice-panel-library section', async () => {
     const u = userEvent.setup();
     render(<VoiceEditor />);
     await u.click(screen.getByRole('tab', { name: /library/i }));
-    expect(screen.getByText(/coming soon/i)).toBeInTheDocument();
+    expect(screen.getByTestId('voice-panel-library')).toBeInTheDocument();
   });
 
   it('Clone tab body shows placeholder text', async () => {

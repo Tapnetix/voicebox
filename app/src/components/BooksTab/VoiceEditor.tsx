@@ -3,7 +3,7 @@
  *
  * Layout: two-column (character context left, voice-panel right).
  * Three-tab scaffold: Library | Clone | **Design** (active here).
- *   - Library tab body: placeholder — C11 fills this.
+ *   - Library tab body: wired in C11 — lists library/book/preset voices.
  *   - Clone tab body:   placeholder — C12 fills this.
  *   - Design tab body:  fully wired here.
  * Shared preview-player row rendered here; C11/C12 reuse it.
@@ -13,7 +13,7 @@
  *   - Generate preview → usePreviewCharacter → play via getBookAudioUrl(generation_id)
  *   - Assign & back    → useUpdateCharacter({ design_prompt }) → setView('overview')
  *
- * data-testids match wireframe-04 and are consumed by S4 (c10.spec.ts).
+ * data-testids match wireframe-04/04a and are consumed by S4 (c10.spec.ts) and S11 (c11.spec.ts).
  */
 import { useState, useRef, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -22,7 +22,8 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
-import { useCharacters, usePreviewCharacter, useUpdateCharacter } from '@/lib/hooks/useBooks';
+import { Input } from '@/components/ui/input';
+import { useCharacters, usePreviewCharacter, useUpdateCharacter, useVoiceOptions } from '@/lib/hooks/useBooks';
 import { apiClient } from '@/lib/api/client';
 import { cn } from '@/lib/utils/cn';
 import { useBooksStore } from '@/stores/booksStore';
@@ -35,6 +36,32 @@ function confidenceLabel(score: number): 'high' | 'medium' | 'low' {
   if (score >= 0.5) return 'medium';
   return 'low';
 }
+
+// ─── Types ─────────────────────────────────────────────────────────────────────
+
+interface VoiceLibraryEntry {
+  id: string;
+  name: string;
+  voice_type?: string;
+  gender?: string;
+  age_range?: string;
+  engine?: string;
+  accent?: string;
+}
+
+interface VoicePresetEntry {
+  /** preset id (used in preset_voice_id) */
+  id: string;
+  name: string;
+  engine?: string;
+  gender?: string;
+  accent?: string;
+}
+
+/** A selected candidate from the Library tab: either a library/book profile or a preset */
+type LibraryCandidate =
+  | { kind: 'profile'; id: string }
+  | { kind: 'preset'; id: string };
 
 // ─── Shared preview-player row ─────────────────────────────────────────────────
 // C11/C12 reuse this row within their respective tab bodies.
@@ -114,9 +141,334 @@ function PreviewPlayer({ audioSrc, label }: PreviewPlayerProps) {
   );
 }
 
+// ─── VoiceCard ────────────────────────────────────────────────────────────────
+
+interface VoiceCardProps {
+  name: string;
+  meta?: string;
+  badge?: string;
+  isSelected: boolean;
+  onSelect: () => void;
+  onPreview: () => void;
+}
+
+function VoiceCard({ name, meta, badge, isSelected, onSelect, onPreview }: VoiceCardProps) {
+  const { t } = useTranslation();
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={onSelect}
+      onKeyDown={(e) => e.key === 'Enter' && onSelect()}
+      className={cn(
+        'flex items-center justify-between rounded border bg-card px-3 py-2 cursor-pointer transition-colors',
+        isSelected
+          ? 'border-primary ring-1 ring-primary'
+          : 'border-border hover:border-muted-foreground',
+      )}
+    >
+      <div className="min-w-0">
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <strong className="text-sm">{name}</strong>
+          {badge && <Badge variant="secondary" className="text-[10px] h-4">{badge}</Badge>}
+        </div>
+        {meta && <div className="text-xs text-muted-foreground mt-0.5">{meta}</div>}
+      </div>
+      <Button
+        variant="ghost"
+        size="sm"
+        className="h-6 w-6 p-0 shrink-0 ml-2"
+        onClick={(e) => {
+          e.stopPropagation();
+          onPreview();
+        }}
+        aria-label={t('books.voiceEditor.previewVoice', { name })}
+      >
+        ▶
+      </Button>
+    </div>
+  );
+}
+
+// ─── LibraryTabBody ───────────────────────────────────────────────────────────
+
+interface LibraryTabBodyProps {
+  bookId: string | null;
+  charId: string | null;
+  previewAudioSrc: string | null;
+  onPreviewCandidate: (candidate: LibraryCandidate) => void;
+  onAssign: (candidate: LibraryCandidate) => void;
+}
+
+function LibraryTabBody({
+  bookId,
+  charId: _charId,
+  previewAudioSrc,
+  onPreviewCandidate,
+  onAssign,
+}: LibraryTabBodyProps) {
+  const { t } = useTranslation();
+  const { data: voiceOptions } = useVoiceOptions(bookId);
+  const [search, setSearch] = useState('');
+  const [genderFilter, setGenderFilter] = useState('any');
+  const [accentFilter, setAccentFilter] = useState('any');
+  const [selected, setSelected] = useState<LibraryCandidate | null>(null);
+
+  const library: VoiceLibraryEntry[] = (voiceOptions?.library ?? []) as unknown as VoiceLibraryEntry[];
+  const book: VoiceLibraryEntry[] = (voiceOptions?.book ?? []) as unknown as VoiceLibraryEntry[];
+  const presets: VoicePresetEntry[] = (voiceOptions?.presets ?? []) as unknown as VoicePresetEntry[];
+
+  // Derive unique accent values from the preset list for the accent filter
+  const accentOptions = Array.from(
+    new Set(presets.map((p) => p.accent).filter((a): a is string => Boolean(a))),
+  ).sort();
+
+  // Client-side filter helper
+  function filterVoices<T extends { name: string; gender?: string | null }>(voices: T[]): T[] {
+    return voices.filter((v) => {
+      const matchesSearch =
+        !search || v.name.toLowerCase().includes(search.toLowerCase());
+      const matchesGender =
+        genderFilter === 'any' || !v.gender || v.gender.toLowerCase() === genderFilter.toLowerCase();
+      return matchesSearch && matchesGender;
+    });
+  }
+
+  function filterPresets(voices: VoicePresetEntry[]): VoicePresetEntry[] {
+    return voices.filter((v) => {
+      const matchesSearch =
+        !search || v.name.toLowerCase().includes(search.toLowerCase());
+      const matchesGender =
+        genderFilter === 'any' || !v.gender || v.gender.toLowerCase() === genderFilter.toLowerCase();
+      const matchesAccent =
+        accentFilter === 'any' || !v.accent || v.accent.toLowerCase() === accentFilter.toLowerCase();
+      return matchesSearch && matchesGender && matchesAccent;
+    });
+  }
+
+  const filteredLibrary = filterVoices(library);
+  const filteredBook = filterVoices(book);
+  const filteredPresets = filterPresets(presets);
+
+  function isSelected(candidate: LibraryCandidate) {
+    if (!selected) return false;
+    return selected.kind === candidate.kind && selected.id === candidate.id;
+  }
+
+  function handleSelect(candidate: LibraryCandidate) {
+    setSelected(candidate);
+  }
+
+  function handlePreview(candidate: LibraryCandidate) {
+    setSelected(candidate);
+    onPreviewCandidate(candidate);
+  }
+
+  function handleAssign() {
+    if (!selected) return;
+    onAssign(selected);
+  }
+
+  // Derive selected label for status line
+  function selectedLabel(): string | null {
+    if (!selected) return null;
+    if (selected.kind === 'preset') {
+      const p = presets.find((v) => v.id === selected.id);
+      return p ? `${p.name} (${p.engine ?? 'preset'})` : selected.id;
+    }
+    const all = [...library, ...book];
+    const v = all.find((v) => v.id === selected.id);
+    return v ? v.name : selected.id;
+  }
+
+  return (
+    <div data-testid="voice-panel-library">
+      {/* Description */}
+      <p className="text-xs text-muted-foreground mb-2">
+        {t('books.voiceEditor.libraryDescription')}
+      </p>
+
+      {/* Search + filters */}
+      <div className="flex gap-2 mb-3">
+        <Input
+          className="flex-[2] h-7 text-xs"
+          placeholder={t('books.voiceEditor.librarySearch')}
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
+        <select
+          className="flex-1 h-7 rounded border border-border bg-background text-xs px-1"
+          value={genderFilter}
+          onChange={(e) => setGenderFilter(e.target.value)}
+          aria-label={t('books.voiceEditor.libraryGenderFilter')}
+        >
+          <option value="any">{t('books.voiceEditor.libraryGenderAny')}</option>
+          <option value="female">{t('books.voiceEditor.libraryGenderFemale')}</option>
+          <option value="male">{t('books.voiceEditor.libraryGenderMale')}</option>
+        </select>
+        <select
+          className="flex-1 h-7 rounded border border-border bg-background text-xs px-1"
+          value={accentFilter}
+          onChange={(e) => setAccentFilter(e.target.value)}
+          aria-label={t('books.voiceEditor.libraryAccentFilter')}
+          data-testid="accent-filter"
+        >
+          <option value="any">{t('books.voiceEditor.libraryAccentAny')}</option>
+          {accentOptions.map((a) => (
+            <option key={a} value={a}>{a}</option>
+          ))}
+        </select>
+      </div>
+
+      {/* Your library */}
+      <h3 className="text-xs font-semibold mb-1">
+        {t('books.voiceEditor.libraryYours')}{' '}
+        <span className="text-muted-foreground font-normal">
+          — {t('books.voiceEditor.libraryYoursSub')}
+        </span>
+      </h3>
+      <div
+        data-testid="library-voices"
+        className="grid grid-cols-2 gap-2 mb-3"
+      >
+        {filteredLibrary.length === 0 ? (
+          <p className="col-span-2 text-xs text-muted-foreground py-2 text-center">
+            {t('books.voiceEditor.libraryEmpty')}
+          </p>
+        ) : (
+          filteredLibrary.map((v) => {
+            const candidate: LibraryCandidate = { kind: 'profile', id: v.id };
+            const metaParts = [v.gender, v.age_range].filter(Boolean);
+            return (
+              <VoiceCard
+                key={v.id}
+                name={v.name}
+                badge={v.voice_type}
+                meta={metaParts.join(' · ')}
+                isSelected={isSelected(candidate)}
+                onSelect={() => handleSelect(candidate)}
+                onPreview={() => handlePreview(candidate)}
+              />
+            );
+          })
+        )}
+      </div>
+
+      {/* This book's voices */}
+      <h3 className="text-xs font-semibold mb-1">
+        {t('books.voiceEditor.libraryBook')}{' '}
+        <span className="text-muted-foreground font-normal">
+          — {t('books.voiceEditor.libraryBookSub')}
+        </span>
+      </h3>
+      <div
+        data-testid="book-voices"
+        className="grid grid-cols-2 gap-2 mb-3"
+      >
+        {filteredBook.length === 0 ? (
+          <p className="col-span-2 text-xs text-muted-foreground py-2 text-center">
+            {t('books.voiceEditor.libraryEmpty')}
+          </p>
+        ) : (
+          filteredBook.map((v) => {
+            const candidate: LibraryCandidate = { kind: 'profile', id: v.id };
+            const metaParts = [v.gender, v.age_range].filter(Boolean);
+            return (
+              <VoiceCard
+                key={v.id}
+                name={v.name}
+                badge={v.voice_type}
+                meta={metaParts.join(' · ')}
+                isSelected={isSelected(candidate)}
+                onSelect={() => handleSelect(candidate)}
+                onPreview={() => handlePreview(candidate)}
+              />
+            );
+          })
+        )}
+      </div>
+
+      {/* Presets */}
+      <h3 className="text-xs font-semibold mb-1">
+        {t('books.voiceEditor.libraryPresets')}{' '}
+        <span className="text-muted-foreground font-normal">
+          — {t('books.voiceEditor.libraryPresetsSub')}
+        </span>
+      </h3>
+      <div
+        data-testid="preset-voices"
+        className="grid grid-cols-2 gap-2 mb-3"
+      >
+        {filteredPresets.length === 0 ? (
+          <p className="col-span-2 text-xs text-muted-foreground py-2 text-center">
+            {t('books.voiceEditor.libraryEmpty')}
+          </p>
+        ) : (
+          filteredPresets.map((v) => {
+            const candidate: LibraryCandidate = { kind: 'preset', id: v.id };
+            const metaParts = [v.gender, v.accent].filter(Boolean);
+            return (
+              <VoiceCard
+                key={v.id}
+                name={v.name}
+                badge={v.engine}
+                meta={metaParts.join(' · ')}
+                isSelected={isSelected(candidate)}
+                onSelect={() => handleSelect(candidate)}
+                onPreview={() => handlePreview(candidate)}
+              />
+            );
+          })
+        )}
+      </div>
+
+      {/* Preview player */}
+      <PreviewPlayer audioSrc={previewAudioSrc} />
+
+      {/* Selected + action row */}
+      <div className="flex items-center justify-between mt-3">
+        <span className="text-xs text-muted-foreground">
+          {selected ? (
+            <>
+              {t('books.voiceEditor.librarySelected')}{' '}
+              <strong>{selectedLabel()}</strong>
+            </>
+          ) : (
+            t('books.voiceEditor.libraryNoneSelected')
+          )}
+        </span>
+        <div className="flex items-center gap-2">
+          <Button
+            data-testid="preview-voice-btn"
+            variant="secondary"
+            size="sm"
+            onClick={() => selected && onPreviewCandidate(selected)}
+            disabled={!selected}
+          >
+            {t('books.voiceEditor.generatePreview')}
+          </Button>
+          <Button
+            data-testid="assign-selected-btn"
+            size="sm"
+            onClick={handleAssign}
+            disabled={!selected}
+          >
+            {t('books.voiceEditor.libraryAssignBack')}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── VoiceEditor ──────────────────────────────────────────────────────────────
 
-export function VoiceEditor() {
+interface VoiceEditorProps {
+  /** Override the initially active tab (default: 'design') */
+  initialTab?: 'library' | 'clone' | 'design';
+}
+
+export function VoiceEditor({ initialTab = 'design' }: VoiceEditorProps) {
   const { t } = useTranslation();
 
   // ── Store ─────────────────────────────────────────────────────────────────
@@ -189,6 +541,49 @@ export function VoiceEditor() {
         onSuccess: () => setView('overview'),
       },
     );
+  }
+
+  // ── Library tab actions ───────────────────────────────────────────────────
+  function handlePreviewCandidate(candidate: LibraryCandidate) {
+    if (!character) return;
+    if (candidate.kind === 'preset') {
+      preview.mutate({
+        charId: character.id,
+        data: { preset_voice_id: candidate.id },
+      });
+    } else {
+      preview.mutate({
+        charId: character.id,
+        data: { profile_id: candidate.id },
+      });
+    }
+  }
+
+  function handleAssignCandidate(candidate: LibraryCandidate) {
+    if (!character || !selectedBookId) return;
+    if (candidate.kind === 'preset') {
+      updateCharacter.mutate(
+        {
+          bookId: selectedBookId,
+          charId: character.id,
+          data: { preset_voice_id: candidate.id },
+        },
+        {
+          onSuccess: () => setView('overview'),
+        },
+      );
+    } else {
+      updateCharacter.mutate(
+        {
+          bookId: selectedBookId,
+          charId: character.id,
+          data: { profile_id: candidate.id },
+        },
+        {
+          onSuccess: () => setView('overview'),
+        },
+      );
+    }
   }
 
   // ── Render ────────────────────────────────────────────────────────────────
@@ -349,7 +744,7 @@ export function VoiceEditor() {
             </div>
 
             {/* Three-tab scaffold */}
-            <Tabs defaultValue="design">
+            <Tabs defaultValue={initialTab}>
               <TabsList className="mb-3">
                 <TabsTrigger value="library">
                   {t('books.voiceEditor.tabLibrary')}
@@ -362,13 +757,15 @@ export function VoiceEditor() {
                 </TabsTrigger>
               </TabsList>
 
-              {/* Library tab — C11 fills the body here */}
+              {/* Library tab — C11 */}
               <TabsContent value="library">
-                <p className="text-xs text-muted-foreground py-4 text-center">
-                  {t('books.voiceEditor.libraryPlaceholder')}
-                </p>
-                {/* Shared preview-player row (C11/C12 reuse this) */}
-                <PreviewPlayer audioSrc={previewAudioSrc} />
+                <LibraryTabBody
+                  bookId={selectedBookId}
+                  charId={character.id}
+                  previewAudioSrc={previewAudioSrc}
+                  onPreviewCandidate={handlePreviewCandidate}
+                  onAssign={handleAssignCandidate}
+                />
               </TabsContent>
 
               {/* Clone tab — C12 fills the body here */}
@@ -376,7 +773,7 @@ export function VoiceEditor() {
                 <p className="text-xs text-muted-foreground py-4 text-center">
                   {t('books.voiceEditor.clonePlaceholder')}
                 </p>
-                {/* Shared preview-player row (C11/C12 reuse this) */}
+                {/* Shared preview-player row (C12 reuses this) */}
                 <PreviewPlayer audioSrc={previewAudioSrc} />
               </TabsContent>
 
@@ -401,7 +798,7 @@ export function VoiceEditor() {
               </TabsContent>
             </Tabs>
 
-            {/* Action row — save-to-library + preview + assign */}
+            {/* Action row — save-to-library + preview + assign (Design tab only) */}
             <div className="flex items-center justify-between mt-3">
               {/* save-to-library-btn — C13 wires the action */}
               <Button
