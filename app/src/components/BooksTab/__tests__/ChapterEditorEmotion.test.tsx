@@ -1,6 +1,6 @@
 /// <reference types="@testing-library/jest-dom/vitest" />
 import '@/i18n';
-import { render, screen, within, waitFor } from '@testing-library/react';
+import { render, screen, within, waitFor, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { ChapterEditor } from '@/components/BooksTab/ChapterEditor';
@@ -111,5 +111,43 @@ describe('ChapterEditor — emotion/delivery D4', () => {
     expect(previewBtn).toBeInTheDocument();
     await u.click(previewBtn);
     expect(previewMutate).toHaveBeenCalled();
+  });
+
+  it('changing the intensity slider calls useUpdateSegment with updated emotion_intensity', async () => {
+    const u = userEvent.setup();
+    render(<ChapterEditor />);
+    await u.click(screen.getByTestId('emotion-12'));
+    // Radix Slider renders a <span role="slider"> that responds to keyboard events.
+    // Initial value is 0.5, step is 0.05 — one ArrowRight press => 0.55.
+    const popover = screen.getByTestId('delivery-popover');
+    const sliderThumb = within(popover).getByRole('slider');
+    fireEvent.keyDown(sliderThumb, { key: 'ArrowRight', code: 'ArrowRight' });
+    expect(updateMutate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        segmentId: '12',
+        data: expect.objectContaining({ emotion_intensity: 0.55 }),
+      }),
+      expect.anything(),
+    );
+  });
+
+  it('typing in the delivery input then blurring calls useUpdateSegment with the delivery text', async () => {
+    const u = userEvent.setup();
+    render(<ChapterEditor />);
+    await u.click(screen.getByTestId('emotion-12'));
+    const popover = screen.getByTestId('delivery-popover');
+    const deliveryInput = within(popover).getByPlaceholderText(/trembling voice/i);
+    await u.type(deliveryInput, 'speak slowly');
+    // handleDeliveryChange is called on each keystroke — assert intermediate state
+    expect(deliveryInput).toHaveValue('speak slowly');
+    // blur triggers handleDeliveryBlur which persists via updateMutate
+    fireEvent.blur(deliveryInput);
+    expect(updateMutate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        segmentId: '12',
+        data: expect.objectContaining({ delivery: 'speak slowly' }),
+      }),
+      expect.anything(),
+    );
   });
 });
