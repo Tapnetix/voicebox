@@ -21,6 +21,7 @@ vi.mock('@/lib/hooks/useBooks', () => ({
   usePreviewCharacter: () => ({ mutate: previewMutate, isPending: false }),
   useCloneVoiceForCharacter: () => ({ mutateAsync: createClone, isPending: false }),
   useVoiceOptions: () => ({ data: { library: [], book: [], presets: [] } }),
+  useSaveVoiceToLibrary: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 vi.mock('@/lib/api/client', () => ({
   apiClient: {

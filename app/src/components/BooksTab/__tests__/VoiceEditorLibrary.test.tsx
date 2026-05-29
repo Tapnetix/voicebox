@@ -18,6 +18,7 @@ vi.mock('@/lib/hooks/useBooks', () => ({
     book: [{ id: 'bk1', name: 'Holt (designed)', voice_type: 'designed' }],
     presets: [{ id: 'af_heart', name: 'Heart', engine: 'kokoro', gender: 'female' }],
   } }),
+  useSaveVoiceToLibrary: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 
 describe('VoiceEditor (Library)', () => {
