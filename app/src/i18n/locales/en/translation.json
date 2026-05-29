@@ -60,6 +60,27 @@
       "narratorDesign": "Design from description…",
       "analyzeBtn": "Analyze book",
       "analyzing": "Analyzing…"
+    },
+    "analysis": {
+      "title": "Analyzing \"{{title}}\"",
+      "titleGeneric": "Analyzing book…",
+      "subtitle": "AI pass: who speaks each line, how, and in what voice. You can leave and come back.",
+      "progressTitle": "Progress",
+      "waiting": "Waiting for analysis to start…",
+      "chaptersNote": "Chapters were detected instantly at import — analysis only adds characters, attribution, emotion, and voices.",
+      "charactersTitle": "Characters found",
+      "liveLabel": "(live)",
+      "noCharactersYet": "Characters will appear here as they are detected.",
+      "linesCount": "{{count}} lines",
+      "linesLabel": "lines",
+      "retry": "Retry",
+      "stageDetect": "Detect dialogue & speakers",
+      "stageReconcile": "Reconcile characters",
+      "stageProfile": "Profile characters & tag emotion",
+      "stageCast": "Cast voices",
+      "stageDone": "done",
+      "stageRunning": "running",
+      "stagePending": "pending"
     }
   },
   "captures": {
