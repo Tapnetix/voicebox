@@ -8,12 +8,13 @@
  * data-testids match wireframe-05; consumed by S5 (c14.spec.ts) and S15 (c15.spec.ts).
  *   - C15: structural edits (split/merge/type-toggle)  ← THIS FILE
  *   - D3:  per-line preview/regenerate
- *   - D4:  emotion-pill interaction (currently INERT)
- *   - D5:  read-along playback (currently INERT)
+ *   - D4:  emotion-pill interaction
+ *   - D5:  read-along playback ← THIS FILE (wired)
  *
  * Wired interactions:
  *   - Reassign (click dialogue seg → popover → mutate) [C14]
  *   - ⋯ menu → selection-dialog: type-toggle, speaker-pick, split, merge, edit [C15]
+ *   - Read-along: readalong-btn starts/stops; ChapterReadAlong highlights active seg [D5]
  */
 
 import { useRef, useState } from 'react';
@@ -31,8 +32,13 @@ import {
 } from '@/lib/hooks/useBooks';
 import { SegmentDeliveryControl } from './SegmentDeliveryControl';
 import { SegmentRegenerateControl } from './SegmentRegenerateControl';
+import { ChapterReadAlong } from './ChapterReadAlong';
 import type { CharacterResponse, SegmentResponse } from '@/lib/api/types';
 import { useBooksStore } from '@/stores/booksStore';
+import { useStoryStore } from '@/stores/storyStore';
+import { useStory } from '@/lib/hooks/useStories';
+import { useBook } from '@/lib/hooks/useBooks';
+import { useStoryPlayback } from '@/lib/hooks/useStoryPlayback';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -462,6 +468,7 @@ interface SegmentLineProps {
   bookId: string;
   chapterId: string;
   isSelected: boolean;
+  isReadAlongActive: boolean;
   onSelect: (id: string | null) => void;
   updateMutate: ReturnType<typeof useUpdateSegment>['mutate'];
   splitMutateAsync: ReturnType<typeof useSplitSegment>['mutateAsync'];
@@ -476,6 +483,7 @@ function SegmentLine({
   bookId,
   chapterId,
   isSelected,
+  isReadAlongActive,
   onSelect,
   updateMutate,
   splitMutateAsync,
@@ -550,9 +558,11 @@ function SegmentLine({
         <span
           ref={spanRef}
           data-testid={`seg-${segment.id}`}
+          data-active={isReadAlongActive ? 'true' : undefined}
           style={{ color }}
-          className="inline"
+          className={cn('inline', isReadAlongActive && 'readalong-active')}
         >
+          {isReadAlongActive && <span aria-hidden="true">♪ </span>}
           {segment.text}
         </span>
         {menuAndDialog}
@@ -575,17 +585,31 @@ function SegmentLine({
           <span
             ref={spanRef}
             data-testid={`seg-${segment.id}`}
+            data-active={isReadAlongActive ? 'true' : undefined}
+            aria-current={isReadAlongActive ? 'true' : undefined}
             onClick={() => {
               setPopoverOpen(true);
               onSelect(segment.id);
             }}
             style={{
               color,
-              background: isSelected ? hexToRgba(color, 0.2) : undefined,
-              outline: isSelected ? `1px solid ${color}` : undefined,
+              background: isSelected
+                ? hexToRgba(color, 0.2)
+                : isReadAlongActive
+                  ? hexToRgba(color, 0.15)
+                  : undefined,
+              outline: isSelected
+                ? `1px solid ${color}`
+                : isReadAlongActive
+                  ? `2px solid ${color}`
+                  : undefined,
             }}
-            className="cursor-pointer rounded-sm px-0.5"
+            className={cn(
+              'cursor-pointer rounded-sm px-0.5',
+              isReadAlongActive && 'readalong-active',
+            )}
           >
+            {isReadAlongActive && <span aria-hidden="true">♪ </span>}
             {segment.text}
           </span>
         </PopoverTrigger>
@@ -609,7 +633,7 @@ function SegmentLine({
         emotionIntensity={segment.emotion_intensity ?? 0.5}
         delivery={segment.delivery}
       />
-      {/* INERT slot — D5 wires per-line read-along ♪ highlight */}
+      {/* D5: per-line read-along ♪ highlight is now rendered inside the seg span above */}
       {menuAndDialog}
     </>
   );
@@ -706,10 +730,20 @@ function ReviewRail({ segments, characters, onJump }: ReviewRailProps) {
 
 export function ChapterEditor() {
   const { t } = useTranslation();
-  const { selectedBookId, selectedChapterId, setView } = useBooksStore((s) => ({
+  const {
+    selectedBookId,
+    selectedChapterId,
+    setView,
+    readAlongPlaying,
+    currentSpokenSegmentId,
+    setReadAlong,
+  } = useBooksStore((s) => ({
     selectedBookId: s.selectedBookId,
     selectedChapterId: s.selectedChapterId,
     setView: s.setView,
+    readAlongPlaying: s.readAlongPlaying,
+    currentSpokenSegmentId: s.currentSpokenSegmentId,
+    setReadAlong: s.setReadAlong,
   }));
 
   const { data: characters = [] } = useCharacters(selectedBookId);
@@ -718,12 +752,53 @@ export function ChapterEditor() {
   const { mutateAsync: splitMutateAsync } = useSplitSegment();
   const { mutate: mergeMutate } = useMergeSegments();
 
+  // ── Read-along: fetch the chapter's Story ────────────────────────────────
+  // ChapterSummary.story_id links each chapter to its Story. We need
+  // the book detail to resolve the chapter's story_id.
+  const { data: bookDetail } = useBook(selectedBookId);
+  const chapterStoryId =
+    bookDetail?.chapters?.find((c) => c.id === selectedChapterId)?.story_id ?? null;
+  const { data: chapterStory } = useStory(chapterStoryId);
+
+  // storyStore actions for starting/stopping playback
+  const storyPlay = useStoryStore((s) => s.play);
+  const storyPause = useStoryStore((s) => s.pause);
+
+  // ── D5: Drive the Web Audio clock for the chapter's story while read-along is active.
+  // useStoryPlayback owns the requestAnimationFrame loop that advances
+  // storyStore.currentTimeMs — without this call on the /books route,
+  // isPlaying flips true but the clock stays frozen and the highlight never moves.
+  // Pass items only when read-along is active so the hook is inert otherwise.
+  const readAlongItems =
+    readAlongPlaying && chapterStory?.items
+      ? [...chapterStory.items].sort((a, b) => a.start_time_ms - b.start_time_ms)
+      : undefined;
+  useStoryPlayback(readAlongItems);
+
   const [filterMode, setFilterMode] = useState<FilterMode>('all');
   const [byCharacterId, setByCharacterId] = useState<string | null>(null);
   const [showCharacterPicker, setShowCharacterPicker] = useState(false);
   const [selectedSegmentId, setSelectedSegmentId] = useState<string | null>(null);
 
   const segments = sorted(rawSegments);
+
+  // ── Read-along toggle ────────────────────────────────────────────────────
+  function handleReadAlongToggle() {
+    if (readAlongPlaying) {
+      // Stop read-along
+      setReadAlong(false);
+      storyPause();
+    } else {
+      // Start read-along — activate the chapter story and begin playback
+      setReadAlong(true);
+      if (chapterStoryId && chapterStory?.items) {
+        const sortedItems = [...chapterStory.items].sort(
+          (a, b) => a.start_time_ms - b.start_time_ms,
+        );
+        storyPlay(chapterStoryId, sortedItems);
+      }
+    }
+  }
 
   // ── Client-side filtering ────────────────────────────────────────────────
   const visibleSegments = segments.filter((seg) => {
@@ -812,9 +887,17 @@ export function ChapterEditor() {
         </div>
 
         <div className="flex items-center gap-2">
-          {/* INERT slot — read-along wired by D5 */}
-          <Button variant="secondary" size="sm" data-testid="readalong-btn" disabled>
-            ▶ {t('books.chapterEditor.readalong')}
+          {/* D5: read-along button — starts/stops chapter playback with line highlight */}
+          <Button
+            variant={readAlongPlaying ? 'default' : 'secondary'}
+            size="sm"
+            data-testid="readalong-btn"
+            onClick={handleReadAlongToggle}
+          >
+            {readAlongPlaying ? '⏸ ' : '▶ '}
+            {readAlongPlaying
+              ? t('books.chapterEditor.readalongStop', { defaultValue: 'Stop' })
+              : t('books.chapterEditor.readalong')}
           </Button>
           <span className="text-xs text-muted-foreground">
             {t('books.chapterEditor.readalongHint')}
@@ -905,12 +988,15 @@ export function ChapterEditor() {
                       bookId={selectedBookId ?? ''}
                       chapterId={selectedChapterId ?? ''}
                       isSelected={selectedSegmentId === seg.id}
+                      isReadAlongActive={
+                        readAlongPlaying && currentSpokenSegmentId === seg.id
+                      }
                       onSelect={setSelectedSegmentId}
                       updateMutate={updateMutate}
                       splitMutateAsync={splitMutateAsync}
                       mergeMutate={mergeMutate}
                     />
-                    {/* INERT slot — per-line hover preview (D3 wires ▶ audition) */}
+                    {/* Per-line hover preview (D3 wires ▶ audition) */}
                     {isDialogue && (
                       <span
                         className="ml-1 cursor-pointer opacity-0 hover:opacity-100"
@@ -933,6 +1019,14 @@ export function ChapterEditor() {
           onJump={handleJump}
         />
       </div>
+
+      {/* ── D5: Read-along observer (headless — maps time → currentSpokenSegmentId) */}
+      {readAlongPlaying && (
+        <ChapterReadAlong
+          story={chapterStory}
+          segments={segments}
+        />
+      )}
     </div>
   );
 }
