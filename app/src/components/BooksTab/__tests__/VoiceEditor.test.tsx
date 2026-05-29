@@ -305,4 +305,61 @@ describe('VoiceEditor (Design)', () => {
       }),
     );
   });
+
+  it('renders "low" confidence badge when character confidence is 0.3', () => {
+    characterList = [
+      {
+        id: 'm',
+        name: 'Mira',
+        color: '#34d399',
+        voice_type: 'designed',
+        voice_label: 'designed',
+        vocal_description: 'warm, resolute',
+        dialogue_count: 142,
+        confidence: 0.3,
+        archetype: 'determined, weary, protective',
+        gender: 'female',
+        age_range: '30s',
+      },
+    ];
+    storeState = { ...storeState, selectedCharacterId: 'm' };
+    render(<VoiceEditor />);
+    const ctx = screen.getByTestId('character-context');
+    expect(ctx).toHaveTextContent(/low/i);
+    expect(ctx).toHaveTextContent(/confidence/i);
+  });
+
+  it('renders "medium" confidence badge when character confidence is 0.6', () => {
+    characterList = [
+      {
+        id: 'm',
+        name: 'Mira',
+        color: '#34d399',
+        voice_type: 'designed',
+        voice_label: 'designed',
+        vocal_description: 'warm, resolute',
+        dialogue_count: 142,
+        confidence: 0.6,
+        archetype: 'determined, weary, protective',
+        gender: 'female',
+        age_range: '30s',
+      },
+    ];
+    storeState = { ...storeState, selectedCharacterId: 'm' };
+    render(<VoiceEditor />);
+    const ctx = screen.getByTestId('character-context');
+    expect(ctx).toHaveTextContent(/medium/i);
+    expect(ctx).toHaveTextContent(/confidence/i);
+  });
+
+  it('assign-voice-btn navigates to overview via onSuccess callback', async () => {
+    const u = userEvent.setup();
+    // Override updateMutate to immediately invoke onSuccess
+    updateMutate.mockImplementation((_vars: unknown, opts?: { onSuccess?: () => void }) => {
+      opts?.onSuccess?.();
+    });
+    render(<VoiceEditor />);
+    await u.click(screen.getByTestId('assign-voice-btn'));
+    expect(mockSetView).toHaveBeenCalledWith('overview');
+  });
 });
