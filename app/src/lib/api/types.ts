@@ -728,9 +728,9 @@ export interface ExportResponse {
 
 export interface AnalysisProgressEvent {
   type: 'analysis_progress';
-  chapter: number;
-  total_chapters: number;
+  stage: 'detect' | 'reconcile' | 'profile' | 'cast';
   progress: number;
+  message?: string;
 }
 
 export interface CharacterDetectedEvent {
@@ -748,15 +748,15 @@ export interface AnalysisCompleteEvent {
 export interface GenerationProgressEvent {
   type: 'generation_progress';
   chapter_id: string;
-  segment: number;
-  total_segments: number;
-  progress: number;
+  completed: number;
+  errors: number;
+  total: number;
+  overall_progress: number;
 }
 
 export interface GenerationCompleteEvent {
   type: 'generation_complete';
-  chapter_id: string;
-  segments_generated: number;
+  chapter_id?: string;
 }
 
 export interface ExportProgressEvent {
@@ -767,13 +767,14 @@ export interface ExportProgressEvent {
 
 export interface ExportCompleteEvent {
   type: 'export_complete';
-  filename?: string;
+  download_path: string;
+  filename: string;
 }
 
 export interface BookErrorEvent {
   type: 'error';
+  stage: string;
   message: string;
-  code?: string;
 }
 
 export type BookProgressEvent =

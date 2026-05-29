@@ -217,6 +217,11 @@ export function useDeleteCharacter() {
       apiClient.deleteCharacter(bookId, charId),
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: bookKeys.characters(variables.bookId) });
+      // Delete reassigns segments to narrator — invalidate all chapter segments
+      queryClient.invalidateQueries({
+        queryKey: ['books', variables.bookId, 'chapters'],
+        exact: false,
+      });
     },
   });
 }

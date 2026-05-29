@@ -24,8 +24,16 @@ import {
   useGenerateChapter,
   useGenerateBook,
   useStartExport,
+  useDownloadExport,
+  usePreviewCharacter,
 } from '@/lib/hooks/useBooks';
 import { apiClient } from '@/lib/api/client';
+
+// Mock usePlatform for hooks that call platform.filesystem
+vi.mock('@/platform/PlatformContext', () => ({
+  usePlatform: vi.fn(),
+}));
+import { usePlatform } from '@/platform/PlatformContext';
 
 // Create a wrapper with a fresh QueryClient per test
 function makeWrapper() {
@@ -229,7 +237,7 @@ describe('useSplitCharacter', () => {
 });
 
 describe('useDeleteCharacter', () => {
-  it('invalidates characters on success', async () => {
+  it('invalidates characters and affected segments on success', async () => {
     vi.spyOn(apiClient, 'deleteCharacter').mockResolvedValue(undefined);
     const { wrapper, queryClient } = makeWrapper();
     const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
@@ -238,6 +246,10 @@ describe('useDeleteCharacter', () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(invalidateSpy).toHaveBeenCalledWith(
       expect.objectContaining({ queryKey: ['books', 'b1', 'characters'] }),
+    );
+    // Delete reassigns segments — chapters/segments must also be invalidated
+    expect(invalidateSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ queryKey: ['books', 'b1', 'chapters'], exact: false }),
     );
   });
 });
@@ -341,5 +353,104 @@ describe('useStartExport', () => {
     result.current.mutate({ bookId: 'b1', data: { format: 'm4b' } });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(result.current.data?.task_id).toBe('t1');
+  });
+});
+
+describe('useDownloadExport', () => {
+  function makePlatformMock() {
+    const saveFile = vi.fn().mockResolvedValue(undefined);
+    vi.mocked(usePlatform).mockReturnValue({
+      filesystem: { saveFile, openPath: vi.fn(), pickDirectory: vi.fn() },
+      updater: {} as never,
+      audio: {} as never,
+      lifecycle: {} as never,
+      metadata: {} as never,
+    });
+    return { saveFile };
+  }
+
+  it('derives .m4b extension for m4b format and calls saveFile', async () => {
+    const blob = new Blob(['audio'], { type: 'audio/mp4' });
+    vi.spyOn(apiClient, 'downloadExport').mockResolvedValue(blob);
+    const { saveFile } = makePlatformMock();
+    const { wrapper } = makeWrapper();
+    const { result } = renderHook(() => useDownloadExport(), { wrapper });
+    result.current.mutate({ bookId: 'b1', bookTitle: 'My Book', format: 'm4b' });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(saveFile).toHaveBeenCalledWith(
+      expect.stringMatching(/\.m4b$/),
+      blob,
+      expect.any(Array),
+    );
+  });
+
+  it('derives .mp3 extension for mp3_single format', async () => {
+    const blob = new Blob(['audio'], { type: 'audio/mpeg' });
+    vi.spyOn(apiClient, 'downloadExport').mockResolvedValue(blob);
+    const { saveFile } = makePlatformMock();
+    const { wrapper } = makeWrapper();
+    const { result } = renderHook(() => useDownloadExport(), { wrapper });
+    result.current.mutate({ bookId: 'b1', bookTitle: 'Silo', format: 'mp3_single' });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(saveFile).toHaveBeenCalledWith(
+      expect.stringMatching(/\.mp3$/),
+      blob,
+      expect.any(Array),
+    );
+  });
+
+  it('derives .zip extension for mp3_per_chapter format', async () => {
+    const blob = new Blob(['zip'], { type: 'application/zip' });
+    vi.spyOn(apiClient, 'downloadExport').mockResolvedValue(blob);
+    const { saveFile } = makePlatformMock();
+    const { wrapper } = makeWrapper();
+    const { result } = renderHook(() => useDownloadExport(), { wrapper });
+    result.current.mutate({ bookId: 'b1', bookTitle: 'Wool', format: 'mp3_per_chapter' });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(saveFile).toHaveBeenCalledWith(
+      expect.stringMatching(/\.zip$/),
+      blob,
+      expect.any(Array),
+    );
+  });
+
+  it('sanitizes book title for filename (no special characters)', async () => {
+    const blob = new Blob(['audio']);
+    vi.spyOn(apiClient, 'downloadExport').mockResolvedValue(blob);
+    const { saveFile } = makePlatformMock();
+    const { wrapper } = makeWrapper();
+    const { result } = renderHook(() => useDownloadExport(), { wrapper });
+    result.current.mutate({ bookId: 'b1', bookTitle: 'My Book: Special!', format: 'm4b' });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    const [filename] = saveFile.mock.calls[0];
+    expect(filename).toMatch(/^[a-z0-9-]+\.m4b$/);
+    expect(filename).not.toMatch(/[^a-z0-9-.]/);
+  });
+});
+
+describe('usePreviewCharacter', () => {
+  it('calls apiClient.previewCharacter with charId and data', async () => {
+    vi.spyOn(apiClient, 'previewCharacter').mockResolvedValue({
+      generation_id: 'g1',
+      audio_path: '/audio/preview.wav',
+    });
+    const { wrapper } = makeWrapper();
+    const { result } = renderHook(() => usePreviewCharacter(), { wrapper });
+    result.current.mutate({ charId: 'c1', data: { text: 'Hello there', emotion: 'happy' } });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(apiClient.previewCharacter).toHaveBeenCalledWith('c1', { text: 'Hello there', emotion: 'happy' });
+    expect(result.current.data?.generation_id).toBe('g1');
+  });
+
+  it('calls apiClient.previewCharacter with undefined data when omitted', async () => {
+    vi.spyOn(apiClient, 'previewCharacter').mockResolvedValue({
+      generation_id: 'g2',
+      audio_path: '/audio/preview2.wav',
+    });
+    const { wrapper } = makeWrapper();
+    const { result } = renderHook(() => usePreviewCharacter(), { wrapper });
+    result.current.mutate({ charId: 'c1' });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(apiClient.previewCharacter).toHaveBeenCalledWith('c1', undefined);
   });
 });

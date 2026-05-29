@@ -78,8 +78,9 @@ export function useBookProgress(bookId: string, handlers: BookProgressHandlers):
     };
 
     source.onerror = () => {
-      // Connection error — close silently; consumers may retry via handlers or re-render
-      source.close();
+      // Transient connection error — do NOT close; let EventSource auto-reconnect.
+      // Notify the optional error handler so the UI can show a retry indicator.
+      handlersRef.current.onError?.({ type: 'error', stage: 'connection', message: 'SSE connection error' });
     };
 
     return () => {
