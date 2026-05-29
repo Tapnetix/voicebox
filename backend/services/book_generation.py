@@ -87,7 +87,8 @@ async def _generation_with_completion_hook(
 ) -> None:
     """Wrap *inner_coro* so that after it finishes (success or error) we check
     whether any BookSegment for *book_id* is still pending/generating.  If none
-    remain, flip book.status back to 'analyzed'.
+    remain, flip book.status back to 'analyzed' and publish progress/complete
+    SSE events on the per-book channel.
 
     Args:
         book_id:    The Book primary key whose status we manage.
@@ -97,6 +98,8 @@ async def _generation_with_completion_hook(
     redirect it before the hook fires.
     """
     from .. import database
+    from . import book_events
+    from .book_overview import chapter_generation_state
 
     try:
         await inner_coro
@@ -107,6 +110,63 @@ async def _generation_with_completion_hook(
         # Resolve get_db dynamically — allows tests to redirect it.
         db: Session = next(database.get_db())
         try:
+            # ── Compute per-chapter progress and publish events ────────────
+            chapters = (
+                db.query(database.Chapter)
+                .filter_by(book_id=book_id)
+                .order_by(database.Chapter.number)
+                .all()
+            )
+
+            total_segments_all = 0
+            total_completed_all = 0
+
+            for chapter in chapters:
+                segments = (
+                    db.query(database.BookSegment)
+                    .filter_by(chapter_id=chapter.id)
+                    .all()
+                )
+                total = len(segments)
+                completed = sum(1 for s in segments if s.audio_status == "completed")
+                errors = sum(1 for s in segments if s.audio_status == "error")
+
+                total_segments_all += total
+                total_completed_all += completed
+
+                overall_progress = (
+                    total_completed_all / total_segments_all
+                    if total_segments_all > 0
+                    else 0.0
+                )
+
+                book_events.publish(
+                    book_id,
+                    {
+                        "type": "generation_progress",
+                        "chapter_id": chapter.id,
+                        "completed": completed,
+                        "errors": errors,
+                        "total": total,
+                        "overall_progress": overall_progress,
+                    },
+                )
+
+                # Publish generation_complete when this chapter's segments have all
+                # settled (no more pending/generating in this chapter).
+                chapter_in_flight = sum(
+                    1 for s in segments if s.audio_status in {"pending", "generating"}
+                )
+                if chapter_in_flight == 0:
+                    book_events.publish(
+                        book_id,
+                        {
+                            "type": "generation_complete",
+                            "chapter_id": chapter.id,
+                        },
+                    )
+
+            # ── Reset book.status if all book segments have settled ────────
             in_flight = (
                 db.query(database.BookSegment)
                 .join(database.Chapter, database.BookSegment.chapter_id == database.Chapter.id)
