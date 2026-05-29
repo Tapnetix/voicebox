@@ -724,6 +724,69 @@ export interface ExportResponse {
   status: 'exporting';
 }
 
+/* ─── Book SSE Events (contract-04) ──────────────────────────────────── */
+
+export interface AnalysisProgressEvent {
+  type: 'analysis_progress';
+  stage: 'detect' | 'reconcile' | 'profile' | 'cast';
+  progress: number;
+  message?: string;
+}
+
+export interface CharacterDetectedEvent {
+  type: 'character_detected';
+  character: { id: string; name: string; [key: string]: unknown };
+  total: number;
+}
+
+export interface AnalysisCompleteEvent {
+  type: 'analysis_complete';
+  character_count: number;
+  chapter_count: number;
+}
+
+export interface GenerationProgressEvent {
+  type: 'generation_progress';
+  chapter_id: string;
+  completed: number;
+  errors: number;
+  total: number;
+  overall_progress: number;
+}
+
+export interface GenerationCompleteEvent {
+  type: 'generation_complete';
+  chapter_id?: string;
+}
+
+export interface ExportProgressEvent {
+  type: 'export_progress';
+  progress: number;
+  stage?: string;
+}
+
+export interface ExportCompleteEvent {
+  type: 'export_complete';
+  download_path: string;
+  filename: string;
+}
+
+export interface BookErrorEvent {
+  type: 'error';
+  stage: string;
+  message: string;
+}
+
+export type BookProgressEvent =
+  | AnalysisProgressEvent
+  | CharacterDetectedEvent
+  | AnalysisCompleteEvent
+  | GenerationProgressEvent
+  | GenerationCompleteEvent
+  | ExportProgressEvent
+  | ExportCompleteEvent
+  | BookErrorEvent;
+
 /* ─── MCP ─────────────────────────────────────────────────────────────── */
 
 export interface MCPClientBinding {
