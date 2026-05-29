@@ -20,7 +20,23 @@
     "audio": "Audio",
     "models": "Models",
     "settings": "Settings",
-    "updateBadge": "Update"
+    "updateBadge": "Update",
+    "books": "Books"
+  },
+  "books": {
+    "title": "Books",
+    "subtitle": "Your audiobook projects.",
+    "empty": "Import an EPUB, FB2, TXT, or PDF to create your first audiobook.",
+    "import": "+ Import book",
+    "chapters": "{{count}} ch",
+    "status": {
+      "imported": "imported",
+      "analyzing": "analyzing",
+      "analyzed": "analyzed",
+      "generating": "generating",
+      "completed": "completed",
+      "error": "error"
+    }
   },
   "captures": {
     "title": "Captures",
