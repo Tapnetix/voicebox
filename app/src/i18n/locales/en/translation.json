@@ -185,7 +185,23 @@
       "lineUnattributed": "line {{order}} · unattributed",
       "confidenceLow": "low",
       "emotionPillHint": "emotion (D4 wires this)",
-      "loading": "Loading…"
+      "loading": "Loading…",
+      "lineMenuBtn": "⋯",
+      "selectionDialogTitle": "Selected text",
+      "selectionDialogThisTextIs": "This text is",
+      "typeNarration": "Narration",
+      "typeDialogue": "Dialogue",
+      "spokenBy": "Spoken by",
+      "boundaries": "Boundaries",
+      "splitBtn": "✂ Split selection into its own line",
+      "mergePrevBtn": "◂ Merge with previous",
+      "mergeNextBtn": "Merge with next ▸",
+      "editTextBtn": "✎ Edit the words…",
+      "cancelBtn": "Cancel",
+      "applyBtn": "Apply",
+      "editPlaceholder": "Edit the text…",
+      "errorNonAdjacentMerge": "Cannot merge: segments are not adjacent.",
+      "errorEdgeSplit": "Cannot split: offset is at the segment boundary."
     }
   },
   "captures": {
