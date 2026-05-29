@@ -119,10 +119,7 @@ test('S7: narrator card has no checkbox and cannot be selected for merge or dele
   await expect(narratorCard).toBeVisible();
 
   // Narrator card must not contain a checkbox
-  const narratorCheckbox = narratorCard.getByRole('checkbox');
-  await expect(narratorCheckbox).not.toBeVisible().catch(() => {
-    // If the checkbox doesn't exist at all, that's the correct behavior
-  });
+  await expect(narratorCard.getByRole('checkbox')).toHaveCount(0);
 
   // merge-btn and delete-btn remain disabled (nothing selected)
   await expect(page.getByTestId('merge-btn')).toBeDisabled();
