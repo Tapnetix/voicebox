@@ -1,5 +1,6 @@
 import { useBooksStore } from '@/stores/booksStore';
 import { AnalysisProgress } from './AnalysisProgress';
+import { AudiobookExport } from './AudiobookExport';
 import { BookImport } from './BookImport';
 import { BookLibrary } from './BookLibrary';
 import { BookOverview } from './BookOverview';
@@ -11,9 +12,6 @@ import { VoiceEditor } from './VoiceEditor';
  *
  * Sub-view routing is store-driven (booksStore.view). The route /books is a
  * single TanStack route; all sub-views are rendered here based on the store.
- *
- * export arm is left as a null placeholder — AudiobookExport is phase D (D7)
- * and is not built yet.
  */
 export function BooksTab() {
   const view = useBooksStore((s) => s.view);
@@ -38,8 +36,7 @@ export function BooksTab() {
       return <ChapterEditor />;
 
     case 'export':
-      // AudiobookExport is phase D (D7) — not built yet
-      return null;
+      return <AudiobookExport />;
 
     default:
       return null;
