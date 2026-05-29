@@ -5,6 +5,29 @@
 
 # Changelog
 
+## [0.6.0] - 2026-05-29
+
+**The Audiobook release.** Voicebox grows from a voice studio into a multi-voice audiobook producer. Drop in a book, and a local LLM reads it the way a director casts a play — finding every character, attributing each line of dialogue, and proposing a distinct voice for each speaker. Review the cast and fix any mis-attributed line by ear, generate the whole book chapter by chapter through the same serial TTS queue everything else uses, then export a chaptered M4B, a single MP3, or a per-chapter ZIP. Every step runs on your machine.
+
+### Import & analyze — a book becomes a cast
+
+- **Import EPUB, FB2, TXT, or PDF.** The parser splits the work into chapters and shows the title, author, and chapter count before you commit to analysis. FB2 XXE is hardened and PDF headers/footers are stripped.
+- **Literary analysis you can watch.** A bundled Qwen3 LLM chunks the text, detects characters, reconciles aliases, profiles each speaker, and attributes every segment to narration or a character. Progress streams live over a per-book SSE channel — stages advance and characters appear as they're found.
+- **Hybrid voice casting.** Leads and the narrator get designed voices; minor characters draw from your preset library. A co-occurrence distinctiveness pass keeps two characters who share scenes from sounding alike, and book-scoped names avoid collisions.
+
+### Review — fix it by ear
+
+- **Overview hub.** A cast roster (with per-character line counts and confidence) and a chapter list, with merge/delete for duplicate or spurious characters and a confirm-dialog that reassigns a deleted character's lines back to narration.
+- **Chapter editor.** Color-coded, speaker-labeled prose where every line is reassignable. Split a mis-detected line in two, merge adjacent lines, retype narration↔dialogue, or edit the text — each edit invalidates only that line's audio.
+- **Per-line delivery.** An emotion pill opens a delivery popover — preset emotion, intensity, and a free-text instruction ("through gritted teeth") — stored on the line, distinct from the character's voice. A per-line preview auditions exactly what generation will render.
+- **Read-along review.** Play the generated chapter while the spoken line highlights and scrolls into view, so you can catch a confidently-wrong voice by ear and reassign it on the spot.
+
+### Generate & export — render the whole book
+
+- **Chapter & book generation.** Generate a chapter (or the whole book) from the overview; audio materializes lazily and each segment is enqueued through Voicebox's serial TTS queue so book rendering never contends with previews or dictation. Per-segment progress streams until the chapter is playable.
+- **Regenerate a single line** into a new take without disturbing the rest of the chapter.
+- **Audiobook export.** Stitch each chapter's segments with inter-segment / scene / chapter pauses, normalize to a target LUFS, and export **M4B with chapter markers**, a single **MP3**, or a **per-chapter ZIP** — each with ID3 tags and embedded cover/title/author. Progress and the finished download stream over the book channel.
+
 ## [0.5.0] - 2026-04-22
 
 **The Capture release.** Voicebox stops being just a voice-cloning studio and becomes a full AI voice studio. Hold a key anywhere on your machine, speak, release — the transcript lands in the focused text field. Flip the primitive around and any MCP-aware agent — Claude Code, Cursor, Spacebot — speaks back through an on-screen pill in one of your cloned voices. A local LLM sits between the two, so transcripts come out clean and voice profiles can carry a personality that reshapes what the agent says before it gets spoken.
