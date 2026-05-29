@@ -497,6 +497,296 @@ export interface ApplyEffectsRequest {
   set_as_default?: boolean;
 }
 
+/* ─── Books ───────────────────────────────────────────────────────────── */
+
+export type BookStatus =
+  | 'imported'
+  | 'analyzing'
+  | 'analyzed'
+  | 'generating'
+  | 'completed'
+  | 'error';
+
+export type GenerationState = 'none' | 'partial' | 'ready' | 'error';
+
+export type SegmentType = 'dialogue' | 'narration';
+
+export type ExportFormat = 'm4b' | 'mp3_single' | 'mp3_per_chapter';
+
+export type ExportBitrate = '64k' | '128k';
+
+export type ExportChannels = 'mono' | 'stereo';
+
+/** Lightweight profile summary used in voice-options picker. */
+export interface VoiceProfileSummary {
+  id: string;
+  name: string;
+  avatar_path?: string;
+  voice_type: VoiceType;
+  is_library: boolean;
+}
+
+export interface ChapterSummary {
+  id: string;
+  number: number;
+  title: string;
+  word_count: number;
+  story_id?: string;
+  generation_state: GenerationState;
+}
+
+export interface BookResponse {
+  id: string;
+  title: string;
+  author?: string;
+  source_format: string;
+  cover_path?: string;
+  status: BookStatus;
+  chapter_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface BookDetailResponse extends BookResponse {
+  chapters: ChapterSummary[];
+}
+
+export interface BookAnalyzeResponse {
+  book_id: string;
+  task_id: string;
+  status: 'analyzing';
+}
+
+export interface BookUpdateRequest {
+  title?: string;
+  author?: string;
+  cover_path?: string;
+}
+
+export interface CharacterResponse {
+  id: string;
+  name: string;
+  color: string;
+  profile_id?: string;
+  voice_type: string | null;
+  voice_label: string | null;
+  is_library: boolean;
+  is_narrator: boolean;
+  role?: string;
+  gender?: string;
+  age_range?: string;
+  vocal_description?: string;
+  archetype?: string;
+  dialogue_count: number;
+  confidence: number;
+  aliases: string[];
+}
+
+export interface CharacterUpdateRequest {
+  name?: string;
+  color?: string;
+  profile_id?: string;
+  design_prompt?: string;
+  preset_voice_id?: string;
+  is_narrator?: boolean;
+}
+
+export interface CharacterMergeRequest {
+  source_char_id: string;
+}
+
+export interface CharacterSplitRequest {
+  new_name: string;
+  segment_ids: string[];
+}
+
+export interface SegmentAudio {
+  generation_id: string;
+  status: string;
+  audio_path?: string;
+  duration_ms?: number;
+}
+
+export interface SegmentResponse {
+  id: string;
+  chapter_id: string;
+  character_id: string;
+  character_name: string;
+  type: SegmentType;
+  text: string;
+  emotion: string;
+  emotion_intensity: number;
+  delivery?: string;
+  order: number;
+  audio: SegmentAudio;
+}
+
+export interface SegmentUpdateRequest {
+  character_id?: string;
+  emotion?: string;
+  emotion_intensity?: number;
+  delivery?: string;
+  text?: string;
+  type?: SegmentType;
+}
+
+export interface SegmentSplitRequest {
+  at_offset: number;
+}
+
+export interface SegmentMergeRequest {
+  segment_ids: string[];
+}
+
+export interface VoiceOptions {
+  library: VoiceProfileSummary[];
+  book: VoiceProfileSummary[];
+  presets: PresetVoice[];
+}
+
+export interface CharacterPreviewRequest {
+  text?: string;
+  emotion?: string;
+  profile_id?: string;
+  preset_voice_id?: string;
+  design_prompt?: string;
+}
+
+export interface CharacterPreviewResponse {
+  generation_id: string;
+  audio_path: string;
+}
+
+export interface GenerateChapterRequest {
+  engine?: string;
+  model_size?: string;
+  overwrite_errors?: boolean;
+}
+
+export interface GenerateChapterResponse {
+  book_id: string;
+  chapter_id: string;
+  task_id: string;
+  queued_segments: number;
+}
+
+export interface GenerateBookRequest {
+  engine?: string;
+  model_size?: string;
+  overwrite_errors?: boolean;
+}
+
+export interface GenerateBookResponse {
+  book_id: string;
+  task_id: string;
+  queued_segments: number;
+}
+
+export interface RegenerateSegmentRequest {
+  emotion?: string;
+  instruct?: string;
+  seed?: number;
+}
+
+export interface RegenerateSegmentResponse {
+  segment_id: string;
+  generation_id: string;
+  version_id: string;
+  status: string;
+}
+
+export interface ChapterGenerationStatus {
+  chapter_id: string;
+  total: number;
+  completed: number;
+  errors: number;
+  state: GenerationState;
+}
+
+export interface GenerationStatusResponse {
+  chapters: ChapterGenerationStatus[];
+  overall_progress: number;
+}
+
+export interface ExportRequest {
+  format: ExportFormat;
+  bitrate?: ExportBitrate;
+  target_lufs?: number;
+  channels?: ExportChannels;
+  title?: string;
+  author?: string;
+  cover_path?: string;
+}
+
+export interface ExportResponse {
+  book_id: string;
+  task_id: string;
+  status: 'exporting';
+}
+
+/* ─── Book SSE Events (contract-04) ──────────────────────────────────── */
+
+export interface AnalysisProgressEvent {
+  type: 'analysis_progress';
+  stage: 'detect' | 'reconcile' | 'profile' | 'cast';
+  progress: number;
+  message?: string;
+}
+
+export interface CharacterDetectedEvent {
+  type: 'character_detected';
+  character: { id: string; name: string; [key: string]: unknown };
+  total: number;
+}
+
+export interface AnalysisCompleteEvent {
+  type: 'analysis_complete';
+  character_count: number;
+  chapter_count: number;
+}
+
+export interface GenerationProgressEvent {
+  type: 'generation_progress';
+  chapter_id: string;
+  completed: number;
+  errors: number;
+  total: number;
+  overall_progress: number;
+}
+
+export interface GenerationCompleteEvent {
+  type: 'generation_complete';
+  chapter_id?: string;
+}
+
+export interface ExportProgressEvent {
+  type: 'export_progress';
+  progress: number;
+  stage?: string;
+}
+
+export interface ExportCompleteEvent {
+  type: 'export_complete';
+  download_path: string;
+  filename: string;
+}
+
+export interface BookErrorEvent {
+  type: 'error';
+  stage: string;
+  message: string;
+}
+
+export type BookProgressEvent =
+  | AnalysisProgressEvent
+  | CharacterDetectedEvent
+  | AnalysisCompleteEvent
+  | GenerationProgressEvent
+  | GenerationCompleteEvent
+  | ExportProgressEvent
+  | ExportCompleteEvent
+  | BookErrorEvent;
+
 /* ─── MCP ─────────────────────────────────────────────────────────────── */
 
 export interface MCPClientBinding {

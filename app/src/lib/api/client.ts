@@ -4,22 +4,48 @@ import type {
   ActiveTasksResponse,
   ApplyEffectsRequest,
   AvailableEffectsResponse,
+  BookAnalyzeResponse,
+  BookDetailResponse,
+  BookResponse,
+  BookUpdateRequest,
+  CharacterMergeRequest,
+  CharacterPreviewRequest,
+  CharacterPreviewResponse,
+  CharacterResponse,
+  CharacterSplitRequest,
+  CharacterUpdateRequest,
   CudaStatus,
   EffectConfig,
   EffectPresetCreate,
   EffectPresetResponse,
+  ExportRequest,
+  ExportResponse,
+  GenerateBookRequest,
+  GenerateBookResponse,
+  GenerateChapterRequest,
+  GenerateChapterResponse,
   GenerationRequest,
   GenerationResponse,
+  GenerationStatusResponse,
   GenerationVersionResponse,
   HealthResponse,
   HistoryListResponse,
   HistoryQuery,
   HistoryResponse,
+  MCPClientBinding,
+  MCPClientBindingListResponse,
+  MCPClientBindingUpsert,
   ModelDownloadRequest,
   ModelStatusListResponse,
-  PresetVoice,
   PersonalityTextResponse,
+  PresetVoice,
   ProfileSampleResponse,
+  RegenerateSegmentRequest,
+  RegenerateSegmentResponse,
+  SegmentMergeRequest,
+  SegmentResponse,
+  SegmentSplitRequest,
+  SegmentUpdateRequest,
   StoryCreate,
   StoryDetailResponse,
   StoryItemBatchUpdate,
@@ -33,8 +59,10 @@ import type {
   StoryItemVolumeUpdate,
   StoryResponse,
   TranscriptionResponse,
+  VoiceOptions,
   VoiceProfileCreate,
   VoiceProfileResponse,
+  VoiceProfileSummary,
   WhisperModelSize,
   CaptureListResponse,
   CaptureResponse,
@@ -47,9 +75,6 @@ import type {
   CaptureSource,
   GenerationSettings,
   GenerationSettingsUpdate,
-  MCPClientBinding,
-  MCPClientBindingListResponse,
-  MCPClientBindingUpsert,
 } from './types';
 
 function formatErrorDetail(detail: unknown, fallback: string): string {
@@ -919,6 +944,207 @@ class ApiClient {
     }
 
     return response.blob();
+  }
+
+  // Books
+
+  async listBooks(): Promise<BookResponse[]> {
+    return this.request<BookResponse[]>('/books');
+  }
+
+  async getBook(bookId: string): Promise<BookDetailResponse> {
+    return this.request<BookDetailResponse>(`/books/${bookId}`);
+  }
+
+  async importBook(
+    file: File,
+    opts?: { model_size?: string; narrator_voice_id?: string },
+  ): Promise<BookDetailResponse> {
+    const form = new FormData();
+    form.append('file', file);
+    if (opts?.model_size) form.append('model_size', opts.model_size);
+    if (opts?.narrator_voice_id) form.append('narrator_voice_id', opts.narrator_voice_id);
+
+    const res = await fetch(`${this.getBaseUrl()}/books/import`, {
+      method: 'POST',
+      body: form,
+    });
+
+    if (!res.ok) {
+      const error = await res.json().catch(() => ({ detail: res.statusText }));
+      throw new Error(formatErrorDetail(error.detail, `HTTP error! status: ${res.status}`));
+    }
+
+    return res.json();
+  }
+
+  async analyzeBook(
+    bookId: string,
+    opts?: { model_size?: string; narrator_voice_id?: string },
+  ): Promise<BookAnalyzeResponse> {
+    return this.request<BookAnalyzeResponse>(`/books/${bookId}/analyze`, {
+      method: 'POST',
+      body: JSON.stringify(opts ?? {}),
+    });
+  }
+
+  async updateBook(bookId: string, data: BookUpdateRequest): Promise<BookResponse> {
+    return this.request<BookResponse>(`/books/${bookId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteBook(bookId: string): Promise<void> {
+    await this.request<void>(`/books/${bookId}`, { method: 'DELETE' });
+  }
+
+  async getCharacters(bookId: string): Promise<CharacterResponse[]> {
+    return this.request<CharacterResponse[]>(`/books/${bookId}/characters`);
+  }
+
+  async updateCharacter(
+    bookId: string,
+    charId: string,
+    data: CharacterUpdateRequest,
+  ): Promise<CharacterResponse> {
+    return this.request<CharacterResponse>(`/books/${bookId}/characters/${charId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async mergeCharacter(
+    bookId: string,
+    charId: string,
+    data: CharacterMergeRequest,
+  ): Promise<CharacterResponse> {
+    return this.request<CharacterResponse>(`/books/${bookId}/characters/${charId}/merge`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async splitCharacter(
+    bookId: string,
+    charId: string,
+    data: CharacterSplitRequest,
+  ): Promise<CharacterResponse> {
+    return this.request<CharacterResponse>(`/books/${bookId}/characters/${charId}/split`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteCharacter(bookId: string, charId: string): Promise<void> {
+    await this.request<void>(`/books/${bookId}/characters/${charId}`, { method: 'DELETE' });
+  }
+
+  async getVoiceOptions(bookId: string): Promise<VoiceOptions> {
+    return this.request<VoiceOptions>(`/books/${bookId}/voice-options`);
+  }
+
+  async saveVoiceToLibrary(charId: string): Promise<VoiceProfileSummary> {
+    return this.request<VoiceProfileSummary>(`/characters/${charId}/save-to-library`, {
+      method: 'POST',
+    });
+  }
+
+  async previewCharacter(
+    charId: string,
+    data?: CharacterPreviewRequest,
+  ): Promise<CharacterPreviewResponse> {
+    return this.request<CharacterPreviewResponse>(`/characters/${charId}/preview`, {
+      method: 'POST',
+      body: JSON.stringify(data ?? {}),
+    });
+  }
+
+  async getSegments(bookId: string, chapterId: string): Promise<SegmentResponse[]> {
+    return this.request<SegmentResponse[]>(`/books/${bookId}/chapters/${chapterId}/segments`);
+  }
+
+  async updateSegment(segmentId: string, data: SegmentUpdateRequest): Promise<SegmentResponse> {
+    return this.request<SegmentResponse>(`/segments/${segmentId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async splitSegment(segmentId: string, data: SegmentSplitRequest): Promise<SegmentResponse[]> {
+    return this.request<SegmentResponse[]>(`/segments/${segmentId}/split`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async mergeSegments(data: SegmentMergeRequest): Promise<SegmentResponse> {
+    return this.request<SegmentResponse>('/segments/merge', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async generateChapter(
+    bookId: string,
+    chapterId: string,
+    data?: GenerateChapterRequest,
+  ): Promise<GenerateChapterResponse> {
+    return this.request<GenerateChapterResponse>(
+      `/books/${bookId}/chapters/${chapterId}/generate`,
+      {
+        method: 'POST',
+        body: JSON.stringify(data ?? {}),
+      },
+    );
+  }
+
+  async generateBook(bookId: string, data?: GenerateBookRequest): Promise<GenerateBookResponse> {
+    return this.request<GenerateBookResponse>(`/books/${bookId}/generate`, {
+      method: 'POST',
+      body: JSON.stringify(data ?? {}),
+    });
+  }
+
+  async regenerateSegment(
+    segmentId: string,
+    data?: RegenerateSegmentRequest,
+  ): Promise<RegenerateSegmentResponse> {
+    return this.request<RegenerateSegmentResponse>(`/segments/${segmentId}/regenerate`, {
+      method: 'POST',
+      body: JSON.stringify(data ?? {}),
+    });
+  }
+
+  async getGenerationStatus(bookId: string): Promise<GenerationStatusResponse> {
+    return this.request<GenerationStatusResponse>(`/books/${bookId}/generation-status`);
+  }
+
+  async startExport(bookId: string, data: ExportRequest): Promise<ExportResponse> {
+    return this.request<ExportResponse>(`/books/${bookId}/export`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async downloadExport(bookId: string): Promise<Blob> {
+    const url = `${this.getBaseUrl()}/books/${bookId}/export/download`;
+    const res = await fetch(url);
+
+    if (!res.ok) {
+      const error = await res.json().catch(() => ({ detail: res.statusText }));
+      throw new Error(formatErrorDetail(error.detail, `HTTP error! status: ${res.status}`));
+    }
+
+    return res.blob();
+  }
+
+  getBookEventsUrl(bookId: string): string {
+    return `${this.getBaseUrl()}/events/books/${bookId}`;
+  }
+
+  getBookAudioUrl(generationId: string): string {
+    return this.getAudioUrl(generationId);
   }
 }
 
