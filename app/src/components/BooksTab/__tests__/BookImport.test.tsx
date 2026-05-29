@@ -164,6 +164,16 @@ describe('BookImport — extension validation', () => {
       expect(screen.queryByText(/unsupported/i)).not.toBeInTheDocument(),
     );
   });
+
+  it('does not show error for valid .fb2 file', async () => {
+    render(wrap(<BookImport />));
+    const input = screen.getByTestId('book-dropzone');
+    const validFile = new File(['<FictionBook/>'], 'book.fb2', { type: 'application/x-fictionbook+xml' });
+    fireEvent.change(input, { target: { files: [validFile] } });
+    await waitFor(() =>
+      expect(screen.queryByText(/unsupported/i)).not.toBeInTheDocument(),
+    );
+  });
 });
 
 // ── Tests: analyze action ─────────────────────────────────────────────────────
