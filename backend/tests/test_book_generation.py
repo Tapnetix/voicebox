@@ -9,8 +9,11 @@ Tests:
 - Lazy materialization: Story, Generation, StoryItem rows created on first generate
 - Segments link to their Generation rows
 - compose_instruct helper folds emotion + intensity + delivery into instruct
+- book.status resets to 'analyzed' after all segments settle (Fix 1)
+- enqueue_chapter/book_generation own the 409-guard and status lifecycle (Fix 2/3)
 """
 
+import asyncio
 import uuid
 from unittest.mock import MagicMock, patch
 
@@ -62,6 +65,50 @@ def temp_db(engine_and_session):
         db.close()
 
 
+def _make_enqueue_mock(TestSession):
+    """Return an enqueue_generation mock that:
+    1. Marks all BookSegments linked to gen_id as "completed" (simulating TTS success).
+    2. Redirects database.get_db to the test session factory.
+    3. Runs the completion hook coroutine via asyncio.run().
+
+    This exercises the Fix-1 completion hook fully: segments settle → hook fires
+    → book.status resets to 'analyzed'.
+    """
+    def _get_test_db():
+        db = TestSession()
+        try:
+            yield db
+        finally:
+            db.close()
+
+    def _run_with_test_db(gen_id, coro):
+        import backend.database as _db_module
+
+        # Step 1: Mark segments associated with this gen_id as "completed"
+        # so the completion hook sees in_flight == 0 and resets book.status.
+        db = TestSession()
+        try:
+            segs = db.query(_db_module.BookSegment).filter_by(generation_id=gen_id).all()
+            for seg in segs:
+                seg.audio_status = "completed"
+            db.commit()
+        finally:
+            db.close()
+
+        # Step 2: Redirect database.get_db to the test session factory so the
+        # completion hook opens a valid session in the test database.
+        original_get_db = _db_module.get_db
+        _db_module.get_db = _get_test_db
+        try:
+            asyncio.run(coro)
+        except Exception:
+            pass  # hook logs its own errors
+        finally:
+            _db_module.get_db = original_get_db
+
+    return _run_with_test_db
+
+
 @pytest.fixture(scope="function")
 def client(engine_and_session, tmp_path, monkeypatch):
     """Build a minimal app with the book_generation + books routers, mocked queue."""
@@ -78,9 +125,10 @@ def client(engine_and_session, tmp_path, monkeypatch):
     import backend.config as _cfg
     _cfg._data_dir = tmp_path
 
-    # Mock enqueue_generation so no real TTS runs
+    # Mock enqueue_generation so no real TTS runs, but DO run the completion hook
+    # so book.status resets correctly (Fix 1).
     import backend.services.task_queue as tq_module
-    monkeypatch.setattr(tq_module, "enqueue_generation", lambda gen_id, coro: coro.close())
+    monkeypatch.setattr(tq_module, "enqueue_generation", _make_enqueue_mock(TestSession))
 
     app = FastAPI()
     app.include_router(book_generation_router)
@@ -139,7 +187,7 @@ def analyzed_book(engine_and_session, tmp_path, monkeypatch):
     db.add(char)
     db.flush()
 
-    # Two segments
+    # Two segments — both start as "none"
     seg1 = BookSegment(
         chapter_id=chapter.id,
         character_id=char.id,
@@ -326,6 +374,65 @@ def test_book_generate_409_when_already_generating(client, analyzed_book, engine
 
 
 # ---------------------------------------------------------------------------
+# Fix 1: book.status auto-resets after all segments complete
+# ---------------------------------------------------------------------------
+
+
+def test_book_status_resets_after_chapter_generate(client, analyzed_book, engine_and_session):
+    """After chapter generate completes, book.status resets to 'analyzed' automatically.
+
+    This test does NOT manually reset book.status — it proves the completion
+    hook fires and resets it, so a subsequent generate call does NOT 409.
+    """
+    _, TestSession = engine_and_session
+    book_id = analyzed_book["book_id"]
+    chapter_id = analyzed_book["chapter_id"]
+
+    # First generate — status flips to "generating", hook should flip it back
+    r1 = client.post(f"/books/{book_id}/chapters/{chapter_id}/generate", json={})
+    assert r1.status_code == 202, r1.text
+
+    # Verify book.status was reset by the completion hook (no manual reset!)
+    db = TestSession()
+    book = db.query(Book).filter_by(id=book_id).first()
+    db.close()
+    assert book.status == "analyzed", (
+        f"Expected book.status='analyzed' after generation, got {book.status!r}. "
+        "The completion hook must reset it once all segments settle."
+    )
+
+    # A second generate call must NOT 409 (the status reset enabled re-generation).
+    # Segments are now "pending", so 0 new segments will be queued — but 202, not 409.
+    r2 = client.post(f"/books/{book_id}/chapters/{chapter_id}/generate", json={})
+    assert r2.status_code == 202, (
+        f"Expected 202 on re-generate after reset, got 409 — "
+        f"book.status was not properly reset. Response: {r2.text}"
+    )
+
+
+def test_book_status_resets_after_book_generate(client, analyzed_book, engine_and_session):
+    """After whole-book generate, book.status resets to 'analyzed' automatically."""
+    _, TestSession = engine_and_session
+    book_id = analyzed_book["book_id"]
+
+    r1 = client.post(f"/books/{book_id}/generate", json={})
+    assert r1.status_code == 202, r1.text
+
+    db = TestSession()
+    book = db.query(Book).filter_by(id=book_id).first()
+    db.close()
+    assert book.status == "analyzed", (
+        f"Expected book.status='analyzed' after book generate, got {book.status!r}."
+    )
+
+    # Must not 409 on a subsequent call
+    r2 = client.post(f"/books/{book_id}/generate", json={})
+    assert r2.status_code == 202, (
+        f"Expected 202 on re-generate, got 409. book.status was not reset."
+    )
+
+
+# ---------------------------------------------------------------------------
 # Lazy materialization tests
 # ---------------------------------------------------------------------------
 
@@ -358,12 +465,16 @@ def test_chapter_generate_creates_story_and_generation_rows(
         items = db.query(StoryItem).filter_by(story_id=story.id).all()
         assert len(items) == 2, f"Expected 2 StoryItems, got {len(items)}"
 
-        # Check segments have generation_id set
+        # Check segments have generation_id set and passed through generation
+        # (in-process mock runs synchronously so status may have advanced to
+        # "completed" by the time we query; "pending" is also valid if the mock
+        # was a no-op; either way generation_id must be set)
         segs = db.query(BookSegment).filter_by(chapter_id=chapter_id).all()
         for seg in segs:
             assert seg.generation_id is not None, f"Segment {seg.id} missing generation_id"
-            assert seg.audio_status == "pending", (
-                f"Segment {seg.id} audio_status should be 'pending', got {seg.audio_status!r}"
+            assert seg.audio_status in {"pending", "completed"}, (
+                f"Segment {seg.id} audio_status should be 'pending' or 'completed', "
+                f"got {seg.audio_status!r}"
             )
     finally:
         db.close()
@@ -381,12 +492,7 @@ def test_chapter_generate_idempotent_story_creation(
     r1 = client.post(f"/books/{book_id}/chapters/{chapter_id}/generate", json={})
     assert r1.status_code == 202, r1.text
 
-    # Reset book status for second generate
-    db = TestSession()
-    book = db.query(Book).filter_by(id=book_id).first()
-    book.status = "analyzed"
-    db.commit()
-    db.close()
+    # No manual reset needed — the completion hook resets book.status automatically.
 
     # Second generate — should reuse same story
     r2 = client.post(f"/books/{book_id}/chapters/{chapter_id}/generate", json={})
@@ -517,16 +623,11 @@ def test_generation_status_after_generate(client, analyzed_book, engine_and_sess
     book_id = analyzed_book["book_id"]
     chapter_id = analyzed_book["chapter_id"]
 
-    # Run generate
+    # Run generate — book.status resets automatically via completion hook
     r = client.post(f"/books/{book_id}/chapters/{chapter_id}/generate", json={})
     assert r.status_code == 202, r.text
 
-    # Reset book status so we can query
-    db = TestSession()
-    book = db.query(Book).filter_by(id=book_id).first()
-    book.status = "analyzed"
-    db.commit()
-    db.close()
+    # No manual book.status reset needed here (Fix 1 takes care of it).
 
     r = client.get(f"/books/{book_id}/generation-status")
     assert r.status_code == 200, r.text
@@ -541,13 +642,14 @@ def test_generation_status_after_generate(client, analyzed_book, engine_and_sess
 def test_overwrite_errors_flag_re_enqueues_error_segments(
     client, analyzed_book, engine_and_session
 ):
-    """overwrite_errors=true re-queues segments with audio_status='error'."""
+    """overwrite_errors=true re-queues both error and none segments (exactly 2)."""
     _, TestSession = engine_and_session
     book_id = analyzed_book["book_id"]
     chapter_id = analyzed_book["chapter_id"]
     seg1_id = analyzed_book["seg1_id"]
 
-    # Manually set seg1 to error status (simulate failed prior generation)
+    # Set seg1 to "error"; seg2 remains "none" — so overwrite_errors=True yields
+    # exactly 2 eligible segments (error + none).
     db = TestSession()
     seg = db.query(BookSegment).filter_by(id=seg1_id).first()
     seg.audio_status = "error"
@@ -560,8 +662,106 @@ def test_overwrite_errors_flag_re_enqueues_error_segments(
     )
     assert r.status_code == 202, r.text
     body = r.json()
-    # seg1 (error) + seg2 (none) = 2 segments queued
-    assert body["queued_segments"] >= 1
+    # Fix 4: exact count — seg1 (error) + seg2 (none) = exactly 2 segments queued
+    assert body["queued_segments"] == 2
+
+
+# ---------------------------------------------------------------------------
+# Fix 2/3: enqueue_* wrappers are exercised by the endpoint tests above.
+# Direct unit tests for branches not hit by endpoint tests:
+# ---------------------------------------------------------------------------
+
+
+def test_enqueue_chapter_generation_raises_404_for_unknown_book(engine_and_session):
+    """enqueue_chapter_generation raises HTTPException 404 for unknown book."""
+    from fastapi import HTTPException
+    from backend.services.book_generation import enqueue_chapter_generation
+
+    _, TestSession = engine_and_session
+    db = TestSession()
+    try:
+        with pytest.raises(HTTPException) as exc_info:
+            enqueue_chapter_generation(
+                str(uuid.uuid4()), str(uuid.uuid4()), db
+            )
+        assert exc_info.value.status_code == 404
+    finally:
+        db.close()
+
+
+def test_enqueue_chapter_generation_raises_409_when_generating(engine_and_session):
+    """enqueue_chapter_generation raises HTTPException 409 when book is generating."""
+    from fastapi import HTTPException
+    from backend.services.book_generation import enqueue_chapter_generation
+
+    _, TestSession = engine_and_session
+    db = TestSession()
+    book = Book(
+        title="X", author="Y", source_format="epub", status="generating"
+    )
+    db.add(book)
+    db.commit()
+    try:
+        with pytest.raises(HTTPException) as exc_info:
+            enqueue_chapter_generation(book.id, str(uuid.uuid4()), db)
+        assert exc_info.value.status_code == 409
+    finally:
+        db.close()
+
+
+def test_enqueue_chapter_generation_raises_404_for_unknown_chapter(engine_and_session):
+    """enqueue_chapter_generation raises HTTPException 404 for unknown chapter."""
+    from fastapi import HTTPException
+    from backend.services.book_generation import enqueue_chapter_generation
+
+    _, TestSession = engine_and_session
+    db = TestSession()
+    book = Book(
+        title="X", author="Y", source_format="epub", status="analyzed"
+    )
+    db.add(book)
+    db.commit()
+    try:
+        with pytest.raises(HTTPException) as exc_info:
+            enqueue_chapter_generation(book.id, str(uuid.uuid4()), db)
+        assert exc_info.value.status_code == 404
+    finally:
+        db.close()
+
+
+def test_enqueue_book_generation_raises_404_for_unknown_book(engine_and_session):
+    """enqueue_book_generation raises HTTPException 404 for unknown book."""
+    from fastapi import HTTPException
+    from backend.services.book_generation import enqueue_book_generation
+
+    _, TestSession = engine_and_session
+    db = TestSession()
+    try:
+        with pytest.raises(HTTPException) as exc_info:
+            enqueue_book_generation(str(uuid.uuid4()), db)
+        assert exc_info.value.status_code == 404
+    finally:
+        db.close()
+
+
+def test_enqueue_book_generation_raises_409_when_generating(engine_and_session):
+    """enqueue_book_generation raises HTTPException 409 when book is generating."""
+    from fastapi import HTTPException
+    from backend.services.book_generation import enqueue_book_generation
+
+    _, TestSession = engine_and_session
+    db = TestSession()
+    book = Book(
+        title="X", author="Y", source_format="epub", status="generating"
+    )
+    db.add(book)
+    db.commit()
+    try:
+        with pytest.raises(HTTPException) as exc_info:
+            enqueue_book_generation(book.id, db)
+        assert exc_info.value.status_code == 409
+    finally:
+        db.close()
 
 
 # ---------------------------------------------------------------------------

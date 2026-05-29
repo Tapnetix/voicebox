@@ -77,6 +77,62 @@ def compose_instruct(segment) -> Optional[str]:
 
 
 # ---------------------------------------------------------------------------
+# Fix 1: Completion hook — reset book.status when all segments settle
+# ---------------------------------------------------------------------------
+
+
+async def _generation_with_completion_hook(
+    book_id: str,
+    inner_coro,
+) -> None:
+    """Wrap *inner_coro* so that after it finishes (success or error) we check
+    whether any BookSegment for *book_id* is still pending/generating.  If none
+    remain, flip book.status back to 'analyzed'.
+
+    Args:
+        book_id:    The Book primary key whose status we manage.
+        inner_coro: The run_generation coroutine to await.
+
+    ``database.get_db`` is resolved dynamically at call time so that tests can
+    redirect it before the hook fires.
+    """
+    from .. import database
+
+    try:
+        await inner_coro
+    except Exception:
+        logger.exception("run_generation raised inside completion hook")
+    finally:
+        # Open a fresh session so we don't share state with the caller's session.
+        # Resolve get_db dynamically — allows tests to redirect it.
+        db: Session = next(database.get_db())
+        try:
+            in_flight = (
+                db.query(database.BookSegment)
+                .join(database.Chapter, database.BookSegment.chapter_id == database.Chapter.id)
+                .filter(
+                    database.Chapter.book_id == book_id,
+                    database.BookSegment.audio_status.in_({"pending", "generating"}),
+                )
+                .count()
+            )
+            if in_flight == 0:
+                book = db.query(database.Book).filter_by(id=book_id).first()
+                if book is not None and book.status == "generating":
+                    book.status = "analyzed"
+                    db.commit()
+                    logger.info(
+                        "Book %s: all segments settled — status reset to 'analyzed'", book_id
+                    )
+        except Exception:
+            logger.exception(
+                "Completion hook failed to reset book.status for book %s", book_id
+            )
+        finally:
+            db.close()
+
+
+# ---------------------------------------------------------------------------
 # Core materialization: generate a single chapter
 # ---------------------------------------------------------------------------
 
@@ -214,33 +270,6 @@ def generate_chapter(
 
     db.commit()
 
-    # ── Enqueue each generation through the serial TTS queue ─────────────
-    for gen_id in generation_ids:
-        # We need the generation row's details to pass to run_generation
-        gen = db.query(database.Generation).filter_by(id=gen_id).first()
-        if gen is None:
-            continue  # shouldn't happen but be defensive
-
-        coro = run_generation(
-            generation_id=gen_id,
-            profile_id=gen.profile_id,
-            text=gen.text,
-            language=gen.language,
-            engine=gen.engine,
-            model_size=gen.model_size or _DEFAULT_MODEL_SIZE,
-            seed=None,
-            instruct=gen.instruct,
-            mode="generate",
-        )
-
-        try:
-            task_queue.enqueue_generation(gen_id, coro)
-        except Exception:
-            # Queue unavailable (e.g. in tests or during startup) — mark as
-            # error instead of crashing the whole chapter.
-            logger.exception("Failed to enqueue generation %s", gen_id)
-            _mark_generation_error(gen_id, "Queue unavailable", db)
-
     return queued_count, generation_ids
 
 
@@ -296,43 +325,107 @@ def generate_book(
 
 
 # ---------------------------------------------------------------------------
-# Synchronous enqueue entry-point: flip book status + dispatch
+# Public enqueue entry-points: 409 guard + status flip + drain reset
 # ---------------------------------------------------------------------------
 
 
 def enqueue_chapter_generation(
     book_id: str,
     chapter_id: str,
+    db: Session,
     *,
     engine: Optional[str] = None,
     model_size: Optional[str] = None,
     overwrite_errors: bool = False,
 ) -> tuple[str, int]:
-    """Flip book status to 'generating', materialise and enqueue a chapter.
+    """409-guard, flip book status, materialise and enqueue a chapter.
 
-    The status flip is synchronous so concurrent requests see the 409 guard.
+    This is the single place that owns the book status lifecycle for
+    chapter-level generation:
+    1. Checks book.status != 'generating' (409 guard).
+    2. Flips book.status = 'generating' synchronously (race-safe).
+    3. Calls generate_chapter to materialise segments.
+    4. Wraps each enqueued coroutine in the completion hook that resets
+       book.status to 'analyzed' once all its segments settle.
+
+    Args:
+        book_id:          Book primary key.
+        chapter_id:       Chapter primary key.
+        db:               Caller-supplied session (managed by route via Depends).
+        engine:           TTS engine override.
+        model_size:       Model size override.
+        overwrite_errors: Re-enqueue error segments when True.
 
     Returns:
         ``(task_id, queued_segments)``
+
+    Raises:
+        HTTPException 404 if book or chapter not found.
+        HTTPException 409 if book is already generating.
     """
     from .. import database
+    from . import task_queue
+    from .generation import run_generation
 
-    db = next(database.get_db())
-    try:
-        book = db.query(database.Book).filter_by(id=book_id).first()
-        if book is not None:
-            book.status = "generating"
-            db.commit()
+    book = db.query(database.Book).filter_by(id=book_id).first()
+    if book is None:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="Book not found")
 
-        queued, _ = generate_chapter(
-            chapter_id,
-            engine=engine,
-            model_size=model_size,
-            overwrite_errors=overwrite_errors,
-            db=db,
+    if book.status == "generating":
+        from fastapi import HTTPException
+        raise HTTPException(status_code=409, detail="Book is already generating")
+
+    chapter = db.query(database.Chapter).filter_by(id=chapter_id, book_id=book_id).first()
+    if chapter is None:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="Chapter not found")
+
+    # Flip status synchronously — race-safe 409 guard
+    book.status = "generating"
+    db.commit()
+
+    queued, generation_ids = generate_chapter(
+        chapter_id,
+        engine=engine,
+        model_size=model_size,
+        overwrite_errors=overwrite_errors,
+        db=db,
+    )
+
+    # Enqueue each generation through the TTS queue, wrapped with the
+    # completion hook so book.status resets when all segments settle.
+    for gen_id in generation_ids:
+        gen = db.query(database.Generation).filter_by(id=gen_id).first()
+        if gen is None:
+            continue
+
+        inner = run_generation(
+            generation_id=gen_id,
+            profile_id=gen.profile_id,
+            text=gen.text,
+            language=gen.language,
+            engine=gen.engine,
+            model_size=gen.model_size or _DEFAULT_MODEL_SIZE,
+            seed=None,
+            instruct=gen.instruct,
+            mode="generate",
         )
-    finally:
-        db.close()
+
+        wrapped = _generation_with_completion_hook(
+            book_id,
+            inner,
+        )
+
+        try:
+            task_queue.enqueue_generation(gen_id, wrapped)
+        except Exception:
+            logger.exception("Failed to enqueue generation %s", gen_id)
+            _mark_generation_error(gen_id, "Queue unavailable", db)
+
+    # If nothing was queued (e.g. all segments already rendered) reset now.
+    if not generation_ids:
+        _reset_book_status_if_settled(book_id, db)
 
     task_id = str(uuid.uuid4())
     return task_id, queued
@@ -340,34 +433,88 @@ def enqueue_chapter_generation(
 
 def enqueue_book_generation(
     book_id: str,
+    db: Session,
     *,
     engine: Optional[str] = None,
     model_size: Optional[str] = None,
     overwrite_errors: bool = False,
 ) -> tuple[str, int]:
-    """Flip book status to 'generating', materialise and enqueue all chapters.
+    """409-guard, flip book status, materialise and enqueue all chapters.
+
+    Mirrors enqueue_chapter_generation but for whole-book generation.
+
+    Args:
+        book_id:          Book primary key.
+        db:               Caller-supplied session (managed by route via Depends).
+        engine:           TTS engine override.
+        model_size:       Model size override.
+        overwrite_errors: Re-enqueue error segments when True.
 
     Returns:
         ``(task_id, total_queued_segments)``
+
+    Raises:
+        HTTPException 404 if book not found.
+        HTTPException 409 if book is already generating.
     """
     from .. import database
+    from . import task_queue
+    from .generation import run_generation
 
-    db = next(database.get_db())
-    try:
-        book = db.query(database.Book).filter_by(id=book_id).first()
-        if book is not None:
-            book.status = "generating"
-            db.commit()
+    book = db.query(database.Book).filter_by(id=book_id).first()
+    if book is None:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="Book not found")
 
-        total, _ = generate_book(
-            book_id,
-            engine=engine,
-            model_size=model_size,
-            overwrite_errors=overwrite_errors,
-            db=db,
+    if book.status == "generating":
+        from fastapi import HTTPException
+        raise HTTPException(status_code=409, detail="Book is already generating")
+
+    # Flip status synchronously — race-safe 409 guard
+    book.status = "generating"
+    db.commit()
+
+    total, generation_ids = generate_book(
+        book_id,
+        engine=engine,
+        model_size=model_size,
+        overwrite_errors=overwrite_errors,
+        db=db,
+    )
+
+    # Enqueue each generation through the TTS queue, wrapped with the
+    # completion hook so book.status resets when all segments settle.
+    for gen_id in generation_ids:
+        gen = db.query(database.Generation).filter_by(id=gen_id).first()
+        if gen is None:
+            continue
+
+        inner = run_generation(
+            generation_id=gen_id,
+            profile_id=gen.profile_id,
+            text=gen.text,
+            language=gen.language,
+            engine=gen.engine,
+            model_size=gen.model_size or _DEFAULT_MODEL_SIZE,
+            seed=None,
+            instruct=gen.instruct,
+            mode="generate",
         )
-    finally:
-        db.close()
+
+        wrapped = _generation_with_completion_hook(
+            book_id,
+            inner,
+        )
+
+        try:
+            task_queue.enqueue_generation(gen_id, wrapped)
+        except Exception:
+            logger.exception("Failed to enqueue generation %s", gen_id)
+            _mark_generation_error(gen_id, "Queue unavailable", db)
+
+    # If nothing was queued (e.g. all segments already rendered) reset now.
+    if not generation_ids:
+        _reset_book_status_if_settled(book_id, db)
 
     task_id = str(uuid.uuid4())
     return task_id, total
@@ -376,6 +523,30 @@ def enqueue_book_generation(
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+
+
+def _reset_book_status_if_settled(book_id: str, db: Session) -> None:
+    """Synchronously reset book.status to 'analyzed' if no segments are in-flight.
+
+    Used when no generations were enqueued (nothing to await), so the
+    async completion hook would never fire.
+    """
+    from .. import database
+
+    in_flight = (
+        db.query(database.BookSegment)
+        .join(database.Chapter, database.BookSegment.chapter_id == database.Chapter.id)
+        .filter(
+            database.Chapter.book_id == book_id,
+            database.BookSegment.audio_status.in_({"pending", "generating"}),
+        )
+        .count()
+    )
+    if in_flight == 0:
+        book = db.query(database.Book).filter_by(id=book_id).first()
+        if book is not None and book.status == "generating":
+            book.status = "analyzed"
+            db.commit()
 
 
 def _resolve_profile_id(segment, db) -> Optional[str]:

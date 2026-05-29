@@ -8,9 +8,7 @@ Provides:
 
 from __future__ import annotations
 
-import uuid
-
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from .. import database, models
@@ -42,34 +40,18 @@ def generate_chapter(
     - Returns **202** immediately with ``queued_segments``.
     - Returns **404** if the book or chapter does not exist.
     - Returns **409** if the book is already generating.
+
+    The 409 guard, status flip, and drain-reset are all handled inside
+    ``enqueue_chapter_generation`` so the lifecycle lives in one place.
     """
-    book = db.query(database.Book).filter_by(id=book_id).first()
-    if book is None:
-        raise HTTPException(status_code=404, detail="Book not found")
-
-    if book.status == "generating":
-        raise HTTPException(
-            status_code=409,
-            detail="Book is already generating",
-        )
-
-    chapter = db.query(database.Chapter).filter_by(id=chapter_id, book_id=book_id).first()
-    if chapter is None:
-        raise HTTPException(status_code=404, detail="Chapter not found")
-
-    # Flip status synchronously — race-safe 409 guard
-    book.status = "generating"
-    db.commit()
-
-    queued, _ = book_generation.generate_chapter(
+    task_id, queued = book_generation.enqueue_chapter_generation(
+        book_id,
         chapter_id,
+        db,
         engine=body.engine,
         model_size=body.model_size,
         overwrite_errors=body.overwrite_errors,
-        db=db,
     )
-
-    task_id = str(uuid.uuid4())
 
     return models.GenerateResponse(
         book_id=book_id,
@@ -99,30 +81,17 @@ def generate_book(
     - Returns **202** immediately with ``queued_segments`` (sum across all chapters).
     - Returns **404** if the book does not exist.
     - Returns **409** if the book is already generating.
+
+    The 409 guard, status flip, and drain-reset are all handled inside
+    ``enqueue_book_generation`` so the lifecycle lives in one place.
     """
-    book = db.query(database.Book).filter_by(id=book_id).first()
-    if book is None:
-        raise HTTPException(status_code=404, detail="Book not found")
-
-    if book.status == "generating":
-        raise HTTPException(
-            status_code=409,
-            detail="Book is already generating",
-        )
-
-    # Flip status synchronously — race-safe 409 guard
-    book.status = "generating"
-    db.commit()
-
-    total, _ = book_generation.generate_book(
+    task_id, total = book_generation.enqueue_book_generation(
         book_id,
+        db,
         engine=body.engine,
         model_size=body.model_size,
         overwrite_errors=body.overwrite_errors,
-        db=db,
     )
-
-    task_id = str(uuid.uuid4())
 
     return models.GenerateResponse(
         book_id=book_id,
@@ -149,6 +118,8 @@ def get_generation_status(
 
     Uses B5's ``chapter_generation_state`` rollup for the ``state`` field.
     """
+    from fastapi import HTTPException
+
     book = db.query(database.Book).filter_by(id=book_id).first()
     if book is None:
         raise HTTPException(status_code=404, detail="Book not found")
