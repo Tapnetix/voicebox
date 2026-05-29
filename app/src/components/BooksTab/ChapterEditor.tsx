@@ -5,13 +5,15 @@
  * Text filters: All / Dialogue only / By character / Flagged (client-side).
  * Right rail: low-confidence triage with jump-{id} links.
  *
- * data-testids match wireframe-05; consumed by S5 (c14.spec.ts) and extended by:
- *   - C15: structural edits (split/merge/type-toggle)
+ * data-testids match wireframe-05; consumed by S5 (c14.spec.ts) and S15 (c15.spec.ts).
+ *   - C15: structural edits (split/merge/type-toggle)  ← THIS FILE
  *   - D3:  per-line preview/regenerate
  *   - D4:  emotion-pill interaction (currently INERT)
  *   - D5:  read-along playback (currently INERT)
  *
- * Only fully-wired interaction in C14: reassign (click seg → popover → mutate).
+ * Wired interactions:
+ *   - Reassign (click dialogue seg → popover → mutate) [C14]
+ *   - ⋯ menu → selection-dialog: type-toggle, speaker-pick, split, merge, edit [C15]
  */
 
 import { useRef, useState } from 'react';
@@ -20,13 +22,20 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { cn } from '@/lib/utils/cn';
-import { useCharacters, useSegments, useUpdateSegment } from '@/lib/hooks/useBooks';
+import {
+  useCharacters,
+  useSegments,
+  useUpdateSegment,
+  useSplitSegment,
+  useMergeSegments,
+} from '@/lib/hooks/useBooks';
 import type { CharacterResponse, SegmentResponse } from '@/lib/api/types';
 import { useBooksStore } from '@/stores/booksStore';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type FilterMode = 'all' | 'dialogue' | 'by-character' | 'flagged';
+type SegmentType = 'narration' | 'dialogue';
 
 // Segments with confidence below this are considered low-confidence / flagged
 const LOW_CONFIDENCE_THRESHOLD = 0.7;
@@ -136,26 +145,328 @@ function ReassignDropdown({
   );
 }
 
+// ─── SelectionDialog ──────────────────────────────────────────────────────────
+
+interface SelectionDialogProps {
+  segment: SegmentResponse;
+  prevSegment: SegmentResponse | null;
+  nextSegment: SegmentResponse | null;
+  characters: CharacterResponse[];
+  bookId: string;
+  chapterId: string;
+  onClose: () => void;
+  updateMutate: ReturnType<typeof useUpdateSegment>['mutate'];
+  splitMutateAsync: ReturnType<typeof useSplitSegment>['mutateAsync'];
+  mergeMutate: ReturnType<typeof useMergeSegments>['mutate'];
+}
+
+function SelectionDialog({
+  segment,
+  prevSegment,
+  nextSegment,
+  characters,
+  bookId,
+  chapterId,
+  onClose,
+  updateMutate,
+  splitMutateAsync,
+  mergeMutate,
+}: SelectionDialogProps) {
+  const { t } = useTranslation();
+
+  // Local state for the dialog fields
+  const [localType, setLocalType] = useState<SegmentType>(
+    segment.type as SegmentType,
+  );
+  const [localCharacterId, setLocalCharacterId] = useState<string>(
+    segment.character_id,
+  );
+  const [editMode, setEditMode] = useState(false);
+  const [editText, setEditText] = useState(segment.text);
+  const [error, setError] = useState<string | null>(null);
+  const [splitting, setSplitting] = useState(false);
+
+  const isDialogue = localType === 'dialogue';
+
+  /** Compute at_offset from the current window selection within the segment text.
+   *  Falls back to 0 if no selection or selection not found in text. */
+  function computeAtOffset(): number {
+    const selection = window.getSelection();
+    if (!selection || selection.isCollapsed) return 0;
+    const selectedText = selection.toString();
+    const idx = segment.text.indexOf(selectedText);
+    if (idx === -1) return 0;
+    return idx;
+  }
+
+  async function handleSplit() {
+    const at_offset = computeAtOffset();
+    setSplitting(true);
+    setError(null);
+    try {
+      await splitMutateAsync({
+        segmentId: segment.id,
+        data: { at_offset },
+        bookId,
+        chapterId,
+      });
+      // If dialogue mode with a different character selected, assign the new segment
+      onClose();
+    } catch (err: any) {
+      // Surface B9 400 errors inline
+      const msg =
+        err?.response?.data?.detail ??
+        err?.message ??
+        t('books.chapterEditor.errorEdgeSplit');
+      setError(msg);
+    } finally {
+      setSplitting(false);
+    }
+  }
+
+  function handleMergePrev() {
+    if (!prevSegment) return;
+    setError(null);
+    mergeMutate(
+      {
+        data: { segment_ids: [prevSegment.id, segment.id] },
+        bookId,
+        chapterId,
+      },
+      {
+        onSuccess: () => onClose(),
+        onError: (err: any) => {
+          const msg =
+            err?.response?.data?.detail ??
+            err?.message ??
+            t('books.chapterEditor.errorNonAdjacentMerge');
+          setError(msg);
+        },
+      },
+    );
+  }
+
+  function handleMergeNext() {
+    if (!nextSegment) return;
+    setError(null);
+    mergeMutate(
+      {
+        data: { segment_ids: [segment.id, nextSegment.id] },
+        bookId,
+        chapterId,
+      },
+      {
+        onSuccess: () => onClose(),
+        onError: (err: any) => {
+          const msg =
+            err?.response?.data?.detail ??
+            err?.message ??
+            t('books.chapterEditor.errorNonAdjacentMerge');
+          setError(msg);
+        },
+      },
+    );
+  }
+
+  function handleApply() {
+    setError(null);
+    if (editMode) {
+      // Edit text
+      updateMutate(
+        {
+          segmentId: segment.id,
+          data: { text: editText },
+          bookId,
+          chapterId,
+        },
+        {
+          onSuccess: () => onClose(),
+        },
+      );
+    } else {
+      // Type toggle and/or speaker change
+      const updateData: Record<string, string> = {};
+      if (localType !== segment.type) updateData.type = localType;
+      if (isDialogue && localCharacterId !== segment.character_id) {
+        updateData.character_id = localCharacterId;
+      }
+      if (Object.keys(updateData).length === 0) {
+        onClose();
+        return;
+      }
+      updateMutate(
+        {
+          segmentId: segment.id,
+          data: updateData,
+          bookId,
+          chapterId,
+        },
+        {
+          onSuccess: () => onClose(),
+        },
+      );
+    }
+  }
+
+  return (
+    <div
+      data-testid="selection-dialog"
+      className="card absolute left-0 top-full z-30 mt-1.5 w-96 p-3.5"
+      style={{ background: 'var(--panel-2, white)', border: '1px solid var(--border, #e5e7eb)' }}
+    >
+      {/* Selected text preview */}
+      <p className="mb-1 text-xs text-muted-foreground">{t('books.chapterEditor.selectionDialogTitle')}</p>
+      <p className="mb-3 italic text-sm">{segment.text.slice(0, 80)}{segment.text.length > 80 ? '…' : ''}</p>
+
+      {/* Type toggle */}
+      <p className="mb-1 text-xs text-muted-foreground">{t('books.chapterEditor.selectionDialogThisTextIs')}</p>
+      <div data-testid="type-toggle" className="mb-2.5 flex gap-1">
+        {(['narration', 'dialogue'] as const).map((type) => (
+          <button
+            key={type}
+            onClick={() => setLocalType(type)}
+            className={cn(
+              'rounded px-3 py-1 text-sm',
+              localType === type
+                ? 'bg-primary text-primary-foreground'
+                : 'bg-muted text-muted-foreground hover:bg-muted/80',
+            )}
+          >
+            {type === 'narration'
+              ? t('books.chapterEditor.typeNarration')
+              : t('books.chapterEditor.typeDialogue')}
+          </button>
+        ))}
+      </div>
+
+      {/* Speaker row — shown only when Dialogue */}
+      {isDialogue && (
+        <div data-testid="speaker-row" className="mb-3">
+          <p className="mb-1 text-xs text-muted-foreground">
+            {t('books.chapterEditor.spokenBy')}
+          </p>
+          <select
+            className="w-full rounded border px-2 py-1 text-sm"
+            value={localCharacterId}
+            onChange={(e) => setLocalCharacterId(e.target.value)}
+          >
+            {characters.map((char) => (
+              <option key={char.id} value={char.id}>
+                {char.name}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+
+      {/* Boundaries section */}
+      <p className="mb-1 text-xs text-muted-foreground">{t('books.chapterEditor.boundaries')}</p>
+      <div className="mb-3 flex flex-col gap-1.5">
+        <button
+          data-testid="split-btn"
+          className="rounded px-2 py-1 text-left text-sm hover:bg-muted"
+          onClick={handleSplit}
+          disabled={splitting}
+        >
+          {t('books.chapterEditor.splitBtn')}
+        </button>
+        <div className="flex gap-1.5">
+          <button
+            data-testid="merge-prev-btn"
+            className="rounded px-2 py-1 text-sm hover:bg-muted disabled:opacity-40"
+            onClick={handleMergePrev}
+            disabled={!prevSegment}
+          >
+            {t('books.chapterEditor.mergePrevBtn')}
+          </button>
+          <button
+            data-testid="merge-next-btn"
+            className="rounded px-2 py-1 text-sm hover:bg-muted disabled:opacity-40"
+            onClick={handleMergeNext}
+            disabled={!nextSegment}
+          >
+            {t('books.chapterEditor.mergeNextBtn')}
+          </button>
+        </div>
+        <button
+          data-testid="edit-text-btn"
+          className="rounded px-2 py-1 text-left text-sm hover:bg-muted"
+          onClick={() => setEditMode((m) => !m)}
+        >
+          {t('books.chapterEditor.editTextBtn')}
+        </button>
+      </div>
+
+      {/* Edit textarea — shown when edit mode active */}
+      {editMode && (
+        <textarea
+          className="mb-3 w-full rounded border px-2 py-1 text-sm"
+          rows={3}
+          value={editText}
+          onChange={(e) => setEditText(e.target.value)}
+          placeholder={t('books.chapterEditor.editPlaceholder')}
+        />
+      )}
+
+      {/* Inline error */}
+      {error && (
+        <p className="mb-2 text-xs text-destructive">{error}</p>
+      )}
+
+      {/* Footer buttons */}
+      <div className="flex justify-end gap-1.5">
+        <Button
+          data-testid="cancel-btn"
+          variant="ghost"
+          size="sm"
+          onClick={onClose}
+        >
+          {t('books.chapterEditor.cancelBtn')}
+        </Button>
+        <Button
+          data-testid="apply-btn"
+          size="sm"
+          onClick={handleApply}
+        >
+          {t('books.chapterEditor.applyBtn')}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+// ─── SegmentLine ──────────────────────────────────────────────────────────────
+
 interface SegmentLineProps {
   segment: SegmentResponse;
+  prevSegment: SegmentResponse | null;
+  nextSegment: SegmentResponse | null;
   characters: CharacterResponse[];
   bookId: string;
   chapterId: string;
   isSelected: boolean;
   onSelect: (id: string | null) => void;
   updateMutate: ReturnType<typeof useUpdateSegment>['mutate'];
+  splitMutateAsync: ReturnType<typeof useSplitSegment>['mutateAsync'];
+  mergeMutate: ReturnType<typeof useMergeSegments>['mutate'];
 }
 
 function SegmentLine({
   segment,
+  prevSegment,
+  nextSegment,
   characters,
   bookId,
   chapterId,
   isSelected,
   onSelect,
   updateMutate,
+  splitMutateAsync,
+  mergeMutate,
 }: SegmentLineProps) {
+  const { t } = useTranslation();
   const [popoverOpen, setPopoverOpen] = useState(false);
+  const [dialogOpen, setDialogOpen] = useState(false);
   const spanRef = useRef<HTMLSpanElement>(null);
   const color = resolveColor(segment.character_id, characters);
   const isDialogue = segment.type === 'dialogue';
@@ -177,17 +488,58 @@ function SegmentLine({
     );
   }
 
+  function handleMenuClick(e: React.MouseEvent) {
+    e.stopPropagation();
+    setDialogOpen((d) => !d);
+    onSelect(segment.id);
+  }
+
+  function handleDialogClose() {
+    setDialogOpen(false);
+    onSelect(null);
+  }
+
+  // The ⋯ menu button + selection dialog wrapper (shared by narration and dialogue)
+  const menuAndDialog = (
+    <span className="relative inline-block">
+      <button
+        aria-label={t('books.chapterEditor.lineMenuBtn')}
+        className="ml-1 rounded px-1 text-xs text-muted-foreground opacity-50 hover:opacity-100"
+        onClick={handleMenuClick}
+      >
+        ⋯
+      </button>
+      {dialogOpen && (
+        <SelectionDialog
+          segment={segment}
+          prevSegment={prevSegment}
+          nextSegment={nextSegment}
+          characters={characters}
+          bookId={bookId}
+          chapterId={chapterId}
+          onClose={handleDialogClose}
+          updateMutate={updateMutate}
+          splitMutateAsync={splitMutateAsync}
+          mergeMutate={mergeMutate}
+        />
+      )}
+    </span>
+  );
+
   if (!isDialogue) {
     // Narration line — not clickable for reassign (no speaker chip / emotion pill)
     return (
-      <span
-        ref={spanRef}
-        data-testid={`seg-${segment.id}`}
-        style={{ color }}
-        className="inline"
-      >
-        {segment.text}
-      </span>
+      <>
+        <span
+          ref={spanRef}
+          data-testid={`seg-${segment.id}`}
+          style={{ color }}
+          className="inline"
+        >
+          {segment.text}
+        </span>
+        {menuAndDialog}
+      </>
     );
   }
 
@@ -234,6 +586,7 @@ function SegmentLine({
       {/* INERT slot — D4 wires the emotion/delivery interaction */}
       <EmotionPill segmentId={segment.id} emotion={segment.emotion} />
       {/* INERT slot — D5 wires per-line read-along ♪ highlight */}
+      {menuAndDialog}
     </>
   );
 }
@@ -338,6 +691,8 @@ export function ChapterEditor() {
   const { data: characters = [] } = useCharacters(selectedBookId);
   const { data: rawSegments = [] } = useSegments(selectedBookId, selectedChapterId);
   const { mutate: updateMutate } = useUpdateSegment();
+  const { mutateAsync: splitMutateAsync } = useSplitSegment();
+  const { mutate: mergeMutate } = useMergeSegments();
 
   const [filterMode, setFilterMode] = useState<FilterMode>('all');
   const [byCharacterId, setByCharacterId] = useState<string | null>(null);
@@ -504,9 +859,13 @@ export function ChapterEditor() {
             {visibleSegments.map((seg) => {
               const color = resolveColor(seg.character_id, characters);
               const isDialogue = seg.type === 'dialogue';
+              // Find prev/next segments in the full sorted list for merge operations
+              const fullIdx = segments.findIndex((s) => s.id === seg.id);
+              const prevSeg = fullIdx > 0 ? segments[fullIdx - 1] : null;
+              const nextSeg = fullIdx < segments.length - 1 ? segments[fullIdx + 1] : null;
 
               return (
-                <p key={seg.id} className="mb-4">
+                <p key={seg.id} className="relative mb-4">
                   <span
                     style={{
                       display: 'inline',
@@ -516,12 +875,16 @@ export function ChapterEditor() {
                   >
                     <SegmentLine
                       segment={seg}
+                      prevSegment={prevSeg}
+                      nextSegment={nextSeg}
                       characters={characters}
                       bookId={selectedBookId ?? ''}
                       chapterId={selectedChapterId ?? ''}
                       isSelected={selectedSegmentId === seg.id}
                       onSelect={setSelectedSegmentId}
                       updateMutate={updateMutate}
+                      splitMutateAsync={splitMutateAsync}
+                      mergeMutate={mergeMutate}
                     />
                     {/* INERT slot — per-line hover preview (D3 wires ▶ audition) */}
                     {isDialogue && (

@@ -58,6 +58,8 @@ vi.mock('@/lib/hooks/useBooks', () => ({
     ],
   }),
   useUpdateSegment: () => ({ mutate: updateMutate, isPending: false }),
+  useSplitSegment: () => ({ mutateAsync: vi.fn().mockResolvedValue([]), isPending: false }),
+  useMergeSegments: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 
 // ─── Test suite ───────────────────────────────────────────────────────────────
