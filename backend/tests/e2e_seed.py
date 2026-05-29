@@ -43,6 +43,10 @@ from backend.database.models import (
     BookCharacter,
     BookSegment,
     Chapter,
+    Generation,
+    GenerationVersion,
+    Story,
+    StoryItem,
     VoiceProfile,
 )
 from backend import config as cfg
@@ -68,7 +72,22 @@ def _cleanup(db):
         # Segments → Characters → Chapters → VoiceProfiles → Book
         chapters = db.query(Chapter).filter_by(book_id=book_id).all()
         for ch in chapters:
+            segments = db.query(BookSegment).filter_by(chapter_id=ch.id).all()
+            for seg in segments:
+                if seg.generation_id:
+                    # Delete versions first, then story items, then generation
+                    db.query(GenerationVersion).filter_by(
+                        generation_id=seg.generation_id
+                    ).delete()
+                    db.query(StoryItem).filter_by(
+                        generation_id=seg.generation_id
+                    ).delete()
+                    db.query(Generation).filter_by(id=seg.generation_id).delete()
             db.query(BookSegment).filter_by(chapter_id=ch.id).delete()
+        # Clean up chapter stories
+        for ch in chapters:
+            if ch.story_id:
+                db.query(Story).filter_by(id=ch.story_id).delete()
         db.query(Chapter).filter_by(book_id=book_id).delete()
         db.query(BookCharacter).filter_by(book_id=book_id).delete()
         db.query(VoiceProfile).filter_by(book_id=book_id).delete()
@@ -445,6 +464,95 @@ def seed():
             flagged=False,
             audio_status="none",
         ))
+
+        # ── 7. Seed stub generations for Chapter 1 seg1 + seg3 ─────────────
+        # These two segments get "completed" audio so the ⋯ menu shows
+        # the Regenerate button — prerequisite for S9 (D3 E2E gate).
+        # We use juliette_profile_id (which has is_library=False) since that
+        # is the only profile guaranteed present.  The audio_path points to a
+        # non-existent file which is fine for UI testing — we only need
+        # the DB rows and audio_status="completed".
+
+        story1 = Story(id=str(uuid.uuid4()), name="Chapter 1 Story")
+        db.add(story1)
+        db.flush()
+        ch1.story_id = story1.id
+        db.flush()
+
+        gen_seg1 = Generation(
+            id=str(uuid.uuid4()),
+            profile_id=juliette_profile_id,
+            text="It never ends, does it?",
+            language="en",
+            engine="kokoro",
+            model_size="1.7B",
+            instruct="sad, softly",
+            source="book_import",
+            status="completed",
+            audio_path=f"generations/e2e-seg1.wav",
+        )
+        db.add(gen_seg1)
+        db.flush()
+
+        gv_seg1 = GenerationVersion(
+            id=str(uuid.uuid4()),
+            generation_id=gen_seg1.id,
+            label="original",
+            audio_path=f"generations/e2e-seg1.wav",
+            is_default=True,
+        )
+        db.add(gv_seg1)
+
+        si_seg1 = StoryItem(
+            id=str(uuid.uuid4()),
+            story_id=story1.id,
+            generation_id=gen_seg1.id,
+            start_time_ms=0,
+            track=0,
+        )
+        db.add(si_seg1)
+
+        gen_seg3 = Generation(
+            id=str(uuid.uuid4()),
+            profile_id=juliette_profile_id,
+            text="Nothing ends. That is the point.",
+            language="en",
+            engine="kokoro",
+            model_size="1.7B",
+            instruct="neutral",
+            source="book_import",
+            status="completed",
+            audio_path=f"generations/e2e-seg3.wav",
+        )
+        db.add(gen_seg3)
+        db.flush()
+
+        gv_seg3 = GenerationVersion(
+            id=str(uuid.uuid4()),
+            generation_id=gen_seg3.id,
+            label="original",
+            audio_path=f"generations/e2e-seg3.wav",
+            is_default=True,
+        )
+        db.add(gv_seg3)
+
+        si_seg3 = StoryItem(
+            id=str(uuid.uuid4()),
+            story_id=story1.id,
+            generation_id=gen_seg3.id,
+            start_time_ms=1,
+            track=0,
+        )
+        db.add(si_seg3)
+
+        # Update the two target segments to "completed" with their generation_id
+        seg1_obj = db.query(BookSegment).filter_by(id=seg1_id).first()
+        seg1_obj.generation_id = gen_seg1.id
+        seg1_obj.audio_status = "completed"
+
+        seg3_obj = db.query(BookSegment).filter_by(id=seg3_id).first()
+        seg3_obj.generation_id = gen_seg3.id
+        seg3_obj.audio_status = "completed"
 
         db.commit()
 

@@ -16,6 +16,7 @@ def register_routers(app: FastAPI) -> None:
     from .stories import router as stories_router
     from .book_analysis import router as book_analysis_router
     from .book_generation import router as book_generation_router
+    from .book_regenerate import router as book_regenerate_router
     from .book_characters import router as book_characters_router
     from .book_character_structure import router as book_character_structure_router
     from .book_segments import router as book_segments_router
@@ -42,6 +43,7 @@ def register_routers(app: FastAPI) -> None:
     app.include_router(stories_router)
     app.include_router(book_analysis_router)
     app.include_router(book_generation_router)
+    app.include_router(book_regenerate_router)
     app.include_router(book_characters_router)
     app.include_router(book_character_structure_router)
     app.include_router(book_segments_router)
