@@ -80,6 +80,11 @@ export function useBookVoiceOptions(bookId: string | null) {
   });
 }
 
+/** Alias for useBookVoiceOptions — used by VoiceEditor (Library tab) and its tests. */
+export function useVoiceOptions(bookId: string | null) {
+  return useBookVoiceOptions(bookId);
+}
+
 export function useBookGenerationStatus(bookId: string | null) {
   return useQuery({
     queryKey: bookKeys.generationStatus(bookId ?? ''),
