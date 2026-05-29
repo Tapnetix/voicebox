@@ -208,7 +208,7 @@ test('S5: review-rail is visible and shows review-progress', async ({ page }) =>
   await expect(page.getByTestId('review-progress')).toBeVisible({ timeout: 3_000 });
 });
 
-test('S5: readalong-btn is present but inert (disabled)', async ({ page }) => {
+test('S5: readalong-btn is present and active (wired by D5)', async ({ page }) => {
   await page.goto('/books');
 
   const bookCard = page.getByText('Silo 42');
@@ -223,6 +223,8 @@ test('S5: readalong-btn is present but inert (disabled)', async ({ page }) => {
 
   const readAlongBtn = page.getByTestId('readalong-btn');
   await expect(readAlongBtn).toBeVisible({ timeout: 8_000 });
-  // The button is present but disabled (D5 wires the interaction)
-  await expect(readAlongBtn).toBeDisabled();
+  // D5 wired the read-along interaction, so the control is now enabled
+  // (it was an inert placeholder at C14 time). Read-along playback itself
+  // (S14) is exercised by d5.spec.ts.
+  await expect(readAlongBtn).toBeEnabled();
 });

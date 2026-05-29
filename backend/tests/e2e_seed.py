@@ -52,6 +52,20 @@ from backend.database.models import (
 from backend import config as cfg
 
 
+def _write_silent_wav(path: Path, seconds: float = 0.5, rate: int = 22050) -> None:
+    """Write a tiny silent mono 16-bit PCM WAV at *path* (idempotent)."""
+    import wave
+    import struct
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    n = int(rate * seconds)
+    with wave.open(str(path), "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(rate)
+        w.writeframes(struct.pack("<" + "h" * n, *([0] * n)))
+
+
 # ── DB Setup ──────────────────────────────────────────────────────────────────
 
 DB_PATH = cfg.get_db_path()
@@ -553,6 +567,19 @@ def seed():
         seg3_obj = db.query(BookSegment).filter_by(id=seg3_id).first()
         seg3_obj.generation_id = gen_seg3.id
         seg3_obj.audio_status = "completed"
+
+        # Write real (silent) WAV files for the two completed generations and
+        # record their durations, so the live audiobook-export gate (S10) can
+        # actually stitch/encode them with FFmpeg and the read-along timeline
+        # has real durations. Tiny 0.5s mono clips keep the fixture cheap.
+        _CLIP_SECONDS = 0.5
+        from backend import config as _config
+
+        gen_dir = _config.get_generations_dir()
+        gen_dir.mkdir(parents=True, exist_ok=True)
+        for _gen, _name in ((gen_seg1, "e2e-seg1.wav"), (gen_seg3, "e2e-seg3.wav")):
+            _write_silent_wav(gen_dir / _name, seconds=_CLIP_SECONDS)
+            _gen.duration = _CLIP_SECONDS
 
         db.commit()
 
