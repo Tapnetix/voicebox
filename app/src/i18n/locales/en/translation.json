@@ -27,7 +27,6 @@
     "title": "Books",
     "subtitle": "Your audiobook projects.",
     "empty": "Import an EPUB, FB2, TXT, or PDF to create your first audiobook.",
-    "import": "+ Import book",
     "chapters": "{{count}} ch",
     "status": {
       "imported": "imported",
@@ -36,6 +35,30 @@
       "generating": "generating",
       "completed": "completed",
       "error": "error"
+    },
+    "import": {
+      "btn": "+ Import book",
+      "dropzoneLabel": "Drop an EPUB, FB2, TXT, or PDF here, or click to browse.",
+      "dropzoneHint": "Drop an EPUB, FB2, TXT, or PDF here, or click to browse.",
+      "pdfNote": "PDF is best-effort — results depend on the source layout.",
+      "unsupportedFormat": "Unsupported file type. Please use EPUB, FB2, TXT, or PDF.",
+      "importError": "Import failed — the file may be corrupt or unsupported.",
+      "detected": "Detected",
+      "fieldTitle": "Title",
+      "fieldAuthor": "Author",
+      "fieldFormat": "Format",
+      "fieldChapters": "Chapters",
+      "chapterCount": "{{count}} chapters",
+      "analysisOptions": "Analysis options",
+      "modelLabel": "Detection model",
+      "model17b": "Qwen3 1.7B (bundled, balanced)",
+      "model06b": "Qwen3 0.6B (fastest)",
+      "model4b": "Qwen3 4B (best, slower)",
+      "narratorLabel": "Narrator voice",
+      "narratorAuto": "Auto (neutral, distinct)",
+      "narratorDesign": "Design from description…",
+      "analyzeBtn": "Analyze book",
+      "analyzing": "Analyzing…"
     }
   },
   "captures": {
