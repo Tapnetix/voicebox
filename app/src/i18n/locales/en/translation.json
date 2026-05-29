@@ -121,6 +121,33 @@
         "mergeFailed": "Merge failed",
         "deleteFailed": "Delete failed"
       }
+    },
+    "chapterEditor": {
+      "backToOverview": "Overview",
+      "chapter": "Ch {{number}}",
+      "chapterOf": "{{current}} of {{total}}",
+      "filterAll": "All",
+      "filterDialogue": "Dialogue only",
+      "filterByCharacter": "By character",
+      "filterFlagged": "Flagged",
+      "readalong": "Read-along",
+      "readalongHint": "plays the chapter & highlights each line as it's spoken",
+      "legend": "legend",
+      "scrollHint": "scroll · the whole chapter is here",
+      "reassignTitle": "Reassign this line to…",
+      "narrator": "Narrator",
+      "reviewTitle": "Flagged",
+      "reviewSubtitle": "lowest-confidence guesses",
+      "reviewHint": "A shortcut to the model's least-certain lines — not the whole job.",
+      "reviewJump": "Jump",
+      "reviewHear": "Hear",
+      "reviewReviewed": "Reviewed",
+      "reviewProgress": "Reviewed {{reviewed}} / {{total}} dialogue lines.",
+      "lineGuessed": "line {{order}} · guessed {{name}}",
+      "lineUnattributed": "line {{order}} · unattributed",
+      "confidenceLow": "low",
+      "emotionPillHint": "emotion (D4 wires this)",
+      "loading": "Loading…"
     }
   },
   "captures": {
