@@ -398,39 +398,45 @@ export function useGenerateBook() {
 // ─── Clone voice for character ────────────────────────────────────────────────
 
 /**
- * Creates a book-scoped cloned voice profile from an audio sample and
- * optionally uploads the sample to it.
+ * Creates a cloned voice profile from an audio sample and uploads the sample.
  *
- * Flow: createProfile (voice_type: 'cloned', is_library: false) →
- *       addProfileSample → return profile { id, name }
+ * Flow: createProfile (voice_type: 'cloned') → addProfileSample → return profile { id, name }
  *
- * The returned profile is book-scoped (not in the global library) so it
- * appears under "this book's voices" until promoted via C13.
+ * Note: the profile is NOT yet book-scoped because the backend POST /profiles
+ * does not accept book_id / is_library on create. To make the clone
+ * book-scoped (is_library=false, book_id=bookId) a backend change is needed.
+ * The profile is assigned to the character via a separate updateCharacter call
+ * (in handleAssignClone) which does set the association.
+ *
+ * TODO: book-scope requires create-profile to accept book_id (backend follow-up)
  */
 export function useCloneVoiceForCharacter() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async ({
-      bookId: _bookId,
-      charId: _charId,
-      name,
-      file,
-    }: {
+    mutationFn: async (vars: {
       bookId: string;
       charId: string;
       name: string;
       file: File;
     }) => {
-      // Step 1: create a cloned profile (book-scoped)
+      // bookId / charId are forwarded through `vars` so onSuccess can access
+      // them via `variables.bookId` / `variables.charId` for cache invalidation
+      // and future character assignment.
+      //
+      // NOTE: POST /profiles does not accept book_id/is_library — the profile
+      // cannot be marked book-scoped at creation time.
+      // TODO: book-scope requires create-profile to accept book_id (backend follow-up)
+
+      // Step 1: create a cloned profile
       const profile = await apiClient.createProfile({
-        name,
+        name: vars.name,
         language: 'en',
         voice_type: 'cloned',
       });
 
       // Step 2: upload the sample file to the profile
-      await apiClient.addProfileSample(profile.id, file, '');
+      await apiClient.addProfileSample(profile.id, vars.file, '');
 
       return profile;
     },

@@ -421,7 +421,7 @@ function CloneTabBody({
             data-testid="preview-voice-btn"
             variant="secondary"
             size="sm"
-            onClick={() => {/* auto-preview triggered by onCloned; manual re-trigger here */}}
+            onClick={() => onCloned(clonedProfileId)}
           >
             {t('books.voiceEditor.generatePreview')}
           </Button>
@@ -740,12 +740,6 @@ export function VoiceEditor({ initialTab = 'design' }: VoiceEditorProps) {
   const preview = usePreviewCharacter();
   const updateCharacter = useUpdateCharacter();
 
-  // ── Clone state ───────────────────────────────────────────────────────────
-  // clonePreviewSrc: will be set when auto-preview returns in a future
-  // iteration; for now the shared previewAudioSrc from usePreviewCharacter
-  // is passed directly to CloneTabBody.
-  const [clonePreviewSrc] = useState<string | null>(null);
-
   // ── Local state ───────────────────────────────────────────────────────────
   const [designPrompt, setDesignPrompt] = useState(character?.vocal_description ?? '');
 
@@ -1058,7 +1052,7 @@ export function VoiceEditor({ initialTab = 'design' }: VoiceEditorProps) {
                   bookId={selectedBookId}
                   charId={character.id}
                   charName={character.name}
-                  previewAudioSrc={clonePreviewSrc ?? previewAudioSrc}
+                  previewAudioSrc={previewAudioSrc}
                   onCloned={handleCloned}
                   onAssign={handleAssignClone}
                   isAssigning={updateCharacter.isPending}
