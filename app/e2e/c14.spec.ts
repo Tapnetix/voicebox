@@ -16,7 +16,7 @@
  * the reassign popover, and observing that the line recolors to the new character.
  */
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures';
 
 // ─── S5: Reassign dialogue in book view ──────────────────────────────────────
 

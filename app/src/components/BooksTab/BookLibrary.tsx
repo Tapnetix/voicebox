@@ -36,6 +36,7 @@ function BookCard({ book, onSelect }: BookCardProps) {
 
   return (
     <Card
+      data-book-id={book.id}
       className="cursor-pointer hover:bg-accent transition-colors"
       onClick={() => onSelect(book)}
     >

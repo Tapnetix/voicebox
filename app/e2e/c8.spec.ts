@@ -10,7 +10,7 @@
  * when the full stack is assembled. Verify parse with:
  *   bun x playwright test --list
  */
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures';
 
 // ─── S3: Book overview hub ────────────────────────────────────────────────────
 

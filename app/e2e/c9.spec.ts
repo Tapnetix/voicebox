@@ -17,7 +17,7 @@
  * Per-task E2E gate: authored here; goes green at phase-end when the full
  * stack is assembled. Verify it parses with: bun x playwright test --list
  */
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures';
 
 // ─── S7: Cast merge flow ───────────────────────────────────────────────────────
 

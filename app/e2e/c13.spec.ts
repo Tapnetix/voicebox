@@ -19,7 +19,7 @@
  *      the promoted voice appears under "Your library" in the Library tab
  *      when editing a character from a different book.
  */
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures';
 
 // ─── S13: Save/promote a voice to the global library ─────────────────────────
 
@@ -56,9 +56,12 @@ test('S13: user saves a character voice to the library and it appears in another
   // Click "★ Save to library"
   await saveBtn.click();
 
-  // A success toast should appear
-  // The toast says "Saved to your library"
-  await expect(page.getByText(/saved to your library/i)).toBeVisible({ timeout: 5_000 });
+  // A success toast should appear with text "Saved to your library".
+  // Use the toast heading element (div with text-sm font-semibold) rather than
+  // the ARIA live-region to avoid strict-mode double-match.
+  await expect(
+    page.locator('div.text-sm.font-semibold', { hasText: /saved to your library/i }).first(),
+  ).toBeVisible({ timeout: 5_000 });
 
   // User stays in the voice editor — no navigation away
   await expect(page.getByTestId('character-context')).toBeVisible();

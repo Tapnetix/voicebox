@@ -11,7 +11,7 @@
  * Fixture: app/e2e-fixtures/silo.epub — a minimal valid EPUB with title "Silo",
  * author "Hugh Howey", and 1 chapter. Built via ebooklib (same as backend test fixture).
  */
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures';
 import path from 'node:path';
 
 test('S1: import silo.epub shows parsed title, author, chapter count before analysis', async ({

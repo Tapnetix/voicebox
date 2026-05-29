@@ -466,7 +466,14 @@ function LibraryTabBody({
 
   const library: VoiceLibraryEntry[] = (voiceOptions?.library ?? []) as unknown as VoiceLibraryEntry[];
   const book: VoiceLibraryEntry[] = (voiceOptions?.book ?? []) as unknown as VoiceLibraryEntry[];
-  const presets: VoicePresetEntry[] = (voiceOptions?.presets ?? []) as unknown as VoicePresetEntry[];
+  // Map PresetVoice (voice_id field) to VoicePresetEntry (id field) for internal use
+  const presets: VoicePresetEntry[] = (voiceOptions?.presets ?? []).map((p) => ({
+    id: (p as unknown as { voice_id: string }).voice_id ?? (p as unknown as { id?: string }).id ?? '',
+    name: p.name,
+    gender: p.gender,
+    engine: 'kokoro',
+    accent: p.language,
+  }));
 
   // Derive unique accent values from the preset list for the accent filter
   const accentOptions = Array.from(

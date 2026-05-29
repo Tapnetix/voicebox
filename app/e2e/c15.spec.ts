@@ -20,7 +20,7 @@
  * chip/color.
  */
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures';
 
 // ─── S15: Fix mis-detected line (split, assign, verify two lines) ─────────────
 
@@ -199,17 +199,38 @@ test('S15: split a mis-detected line into two correctly-attributed lines', async
   const dialog = page.getByTestId('selection-dialog');
   await expect(dialog).toBeVisible({ timeout: 3_000 });
 
-  // Click Split
+  // Select a valid mid-text range in the dialogue segment so the split's
+  // at_offset is >0 and <len (a split at offset 0 is correctly rejected with
+  // an inline error — the component keeps the dialog open in that case). We
+  // set the DOM selection on the segment's text node immediately before
+  // clicking Split, with no intervening clicks that would collapse it.
+  const segId = await firstDialoguePara.locator('[data-testid^="seg-"]').first().getAttribute('data-testid');
+  await page.evaluate((tid) => {
+    const seg = document.querySelector(`[data-testid="${tid}"]`);
+    if (!seg) return;
+    const walker = document.createTreeWalker(seg, NodeFilter.SHOW_TEXT);
+    let node: Node | null = walker.nextNode();
+    while (node && (node.textContent ?? '').trim().length < 8) node = walker.nextNode();
+    if (!node) return;
+    const len = (node.textContent ?? '').length;
+    const range = document.createRange();
+    range.setStart(node, Math.min(3, len - 2));
+    range.setEnd(node, Math.max(4, Math.floor(len / 2)));
+    const sel = window.getSelection();
+    sel?.removeAllRanges();
+    sel?.addRange(range);
+  }, segId);
+
+  // Click Split — a valid selection → split succeeds → dialog closes and the
+  // chapter re-renders with one more segment than before.
   const splitBtn = dialog.getByTestId('split-btn');
   await splitBtn.click();
 
-  // Wait for the split to propagate and segments to re-render
-  await page.waitForTimeout(1_000);
-
-  // After split, the chapter should re-render (segments query invalidated)
-  // If the split happened, we may see one more segment than before
-  // (or the dialog may have closed)
-  await expect(page.getByTestId('selection-dialog')).not.toBeVisible({ timeout: 3_000 });
+  // The dialog closes on a successful split, and the chapter gains a segment.
+  await expect(page.getByTestId('selection-dialog')).not.toBeVisible({ timeout: 5_000 });
+  await expect
+    .poll(async () => chapterText.locator('[data-testid^="seg-"]').count(), { timeout: 5_000 })
+    .toBeGreaterThan(segsBefore);
 });
 
 test('S15: edit-text-btn reveals a textarea for editing segment text', async ({ page }) => {

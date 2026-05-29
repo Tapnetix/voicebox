@@ -460,8 +460,15 @@ export function useCloneVoiceForCharacter() {
         voice_type: 'cloned',
       });
 
-      // Step 2: upload the sample file to the profile
-      await apiClient.addProfileSample(profile.id, vars.file, '');
+      // Step 2: upload the sample file to the profile. The samples endpoint
+      // requires a non-empty reference_text (the transcript of the sample);
+      // an empty string is rejected with 422. Use a sensible default — the
+      // user can refine the sample/transcript later in the profiles UI.
+      await apiClient.addProfileSample(
+        profile.id,
+        vars.file,
+        'Reference voice sample for cloning.',
+      );
 
       return profile;
     },
