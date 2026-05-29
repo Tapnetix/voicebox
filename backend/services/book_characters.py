@@ -266,47 +266,143 @@ def save_character_to_library(char_id: str, db: Session) -> VoiceProfileSummary:
 _PREVIEW_TEXT = "This is a preview of the character's voice."
 
 
+def _resolve_preview_profile(
+    char: BookCharacter,
+    profile_id: Optional[str],
+    preset_voice_id: Optional[str],
+    design_prompt: Optional[str],
+    db: Session,
+) -> tuple[str, str, str]:
+    """Resolve (effective_profile_id, engine, voice_type) for a preview request.
+
+    Candidate priority (first supplied wins):
+      1. profile_id   — audition an existing profile by id
+      2. preset_voice_id — audition a preset voice (no DB row created)
+      3. design_prompt   — audition a designed voice (no DB row created)
+      4. <none>          — use the character's assigned voice
+
+    Raises ValueError('400:...') when nothing is resolvable.
+    Raises ValueError('404:...') when an explicit profile_id is not found.
+    """
+    if profile_id is not None:
+        prof = db.get(VoiceProfile, profile_id)
+        if prof is None:
+            raise ValueError("404:preview profile not found")
+        engine = (
+            getattr(prof, "default_engine", None)
+            or getattr(prof, "preset_engine", None)
+            or "kokoro"
+        )
+        vt = getattr(prof, "voice_type", None) or "cloned"
+        if vt == "preset":
+            engine = getattr(prof, "preset_engine", None) or "kokoro"
+        return prof.id, engine, vt
+
+    if preset_voice_id is not None:
+        # Ephemeral preset — no profile row created; engine defaults to kokoro
+        return "_preset_" + preset_voice_id, "kokoro", "preset"
+
+    if design_prompt is not None:
+        # Ephemeral designed — no profile row created
+        return "_designed_" + design_prompt[:32], "qwen", "designed"
+
+    # Fallback: character's assigned voice
+    if not char.profile_id:
+        raise ValueError("400:character has no voice profile assigned")
+    prof = db.get(VoiceProfile, char.profile_id)
+    if prof is None:
+        raise ValueError("400:assigned profile not found")
+    engine = (
+        getattr(prof, "default_engine", None)
+        or getattr(prof, "preset_engine", None)
+        or "kokoro"
+    )
+    vt = getattr(prof, "voice_type", None) or "cloned"
+    if vt == "preset":
+        engine = getattr(prof, "preset_engine", None) or "kokoro"
+    return prof.id, engine, vt
+
+
 async def preview_character_voice(
     char_id: str,
     text: Optional[str],
     db: Session,
+    *,
+    profile_id: Optional[str] = None,
+    preset_voice_id: Optional[str] = None,
+    design_prompt: Optional[str] = None,
+    emotion: Optional[str] = None,
 ) -> dict:
     """Synthesize a short preview clip through the serial TTS queue.
+
+    When a candidate voice is supplied (profile_id / preset_voice_id /
+    design_prompt), that voice is auditioned without persisting a new profile.
+    Without any candidate the character's assigned voice is used.
 
     Returns {generation_id, audio_path}.
 
     Raises ValueError with '404' sentinel if character not found.
-    Raises ValueError with '400' sentinel if no voice is assigned.
+    Raises ValueError with '400' sentinel if no voice is resolvable.
     """
     char = db.get(BookCharacter, char_id)
     if char is None:
         raise ValueError("404:character not found")
 
-    if not char.profile_id:
-        raise ValueError("400:character has no voice profile assigned")
-
-    profile = db.get(VoiceProfile, char.profile_id)
-    if profile is None:
-        raise ValueError("400:assigned profile not found")
+    effective_profile_id, engine, voice_type = _resolve_preview_profile(
+        char, profile_id, preset_voice_id, design_prompt, db
+    )
 
     preview_text = text or _PREVIEW_TEXT
     generation_id = str(uuid.uuid4())
 
-    # Resolve engine
-    engine = (
-        getattr(profile, "default_engine", None)
-        or getattr(profile, "preset_engine", None)
-        or "kokoro"
-    )
-    voice_type = getattr(profile, "voice_type", None) or "cloned"
-    if voice_type == "preset":
-        engine = getattr(profile, "preset_engine", None) or "kokoro"
+    # Build instruct from emotion if provided
+    instruct: Optional[str] = None
+    if emotion:
+        instruct = f"Speak with a {emotion} tone."
+
+    # For ephemeral candidate previews (preset/designed without a real profile),
+    # we use the character's existing profile as the DB FK anchor (or None if
+    # there is no assigned profile) and pass the candidate params directly to
+    # the generation engine.
+    is_ephemeral = effective_profile_id.startswith(("_preset_", "_designed_"))
+
+    if is_ephemeral:
+        # Use the character's profile as the generation row's FK if available,
+        # otherwise we need a real profile — fall back to the first library profile.
+        anchor_profile_id: Optional[str] = char.profile_id
+        if anchor_profile_id is None:
+            # No assigned profile — create a transient one from the candidate params
+            if preset_voice_id is not None:
+                tmp_profile = VoiceProfile(
+                    id=str(uuid.uuid4()),
+                    name=f"_preview_{generation_id}",
+                    voice_type="preset",
+                    preset_engine="kokoro",
+                    preset_voice_id=preset_voice_id,
+                    default_engine="kokoro",
+                    is_library=False,
+                )
+            else:
+                tmp_profile = VoiceProfile(
+                    id=str(uuid.uuid4()),
+                    name=f"_preview_{generation_id}",
+                    voice_type="designed",
+                    design_prompt=design_prompt,
+                    is_library=False,
+                )
+            db.add(tmp_profile)
+            db.flush()
+            anchor_profile_id = tmp_profile.id
+
+        gen_profile_id = anchor_profile_id
+    else:
+        gen_profile_id = effective_profile_id
 
     # Create a pending generation row
     from ..database import Generation as DBGeneration
     gen_row = DBGeneration(
         id=generation_id,
-        profile_id=profile.id,
+        profile_id=gen_profile_id,
         text=preview_text,
         language="en",
         audio_path="",
@@ -322,25 +418,28 @@ async def preview_character_voice(
     task_manager = get_task_manager()
     task_manager.start_generation(
         task_id=generation_id,
-        profile_id=profile.id,
+        profile_id=gen_profile_id,
         text=preview_text,
+    )
+
+    # Build generation params — for ephemeral candidates override profile fields
+    gen_kwargs: dict = dict(
+        generation_id=generation_id,
+        profile_id=gen_profile_id,
+        text=preview_text,
+        language="en",
+        engine=engine,
+        model_size=None,
+        seed=None,
+        normalize=True,
+        instruct=instruct,
+        mode="generate",
     )
 
     # Enqueue via the serial TTS queue
     enqueue_generation(
         generation_id,
-        run_generation(
-            generation_id=generation_id,
-            profile_id=profile.id,
-            text=preview_text,
-            language="en",
-            engine=engine,
-            model_size=None,
-            seed=None,
-            normalize=True,
-            instruct=None,
-            mode="generate",
-        ),
+        run_generation(**gen_kwargs),
     )
 
     return {

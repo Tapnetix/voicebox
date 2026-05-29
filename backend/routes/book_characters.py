@@ -121,6 +121,10 @@ async def preview_character(
             char_id=char_id,
             text=data.text,
             db=db,
+            profile_id=data.profile_id,
+            preset_voice_id=data.preset_voice_id,
+            design_prompt=data.design_prompt,
+            emotion=data.emotion,
         )
         return PreviewResponse(**result)
     except ValueError as exc:

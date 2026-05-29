@@ -423,3 +423,122 @@ def test_assign_multiple_voice_fields_400(setup):
         json={"profile_id": cast_char_profile_id, "design_prompt": "some text"},
     )
     assert r.status_code == 400
+
+
+# ---------------------------------------------------------------------------
+# Fix 3: preview candidate voices (profile_id / preset_voice_id / design_prompt)
+# ---------------------------------------------------------------------------
+
+
+def _mock_preview_deps(monkeypatch):
+    """Monkeypatch TTS queue and task manager so no real synthesis runs."""
+    enqueue_mock = MagicMock()
+    monkeypatch.setattr(
+        "backend.services.book_characters.enqueue_generation",
+        enqueue_mock,
+    )
+    monkeypatch.setattr(
+        "backend.services.book_characters.run_generation",
+        MagicMock(return_value=AsyncMock()),
+    )
+    monkeypatch.setattr(
+        "backend.services.book_characters.get_task_manager",
+        MagicMock(return_value=MagicMock()),
+    )
+    return enqueue_mock
+
+
+def test_preview_with_profile_id_candidate(setup, monkeypatch):
+    """Preview with profile_id auditions that profile, not the assigned one."""
+    client = setup["client"]
+    cast_char_id = setup["cast_char_id"]
+    cast_char_profile_id = setup["cast_char_profile_id"]
+    enqueue_mock = _mock_preview_deps(monkeypatch)
+
+    # Preview using an explicit profile_id (the cast char's own profile)
+    r = client.post(
+        f"/characters/{cast_char_id}/preview",
+        json={"text": "Testing candidate.", "profile_id": cast_char_profile_id},
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert "generation_id" in body
+    # enqueue_generation was called
+    assert enqueue_mock.called
+
+
+def test_preview_with_preset_voice_id_candidate(setup, monkeypatch):
+    """Preview with preset_voice_id uses the preset voice (not the assigned one)."""
+    client = setup["client"]
+    uncast_char_id = setup["uncast_char_id"]
+    enqueue_mock = _mock_preview_deps(monkeypatch)
+
+    # Even with no assigned voice, preview should work with a candidate preset
+    r = client.post(
+        f"/characters/{uncast_char_id}/preview",
+        json={"text": "Preset preview.", "preset_voice_id": "af_heart"},
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert "generation_id" in body
+    assert enqueue_mock.called
+
+
+def test_preview_with_design_prompt_candidate(setup, monkeypatch):
+    """Preview with design_prompt auditions a designed voice without persisting a profile."""
+    client = setup["client"]
+    uncast_char_id = setup["uncast_char_id"]
+    enqueue_mock = _mock_preview_deps(monkeypatch)
+
+    r = client.post(
+        f"/characters/{uncast_char_id}/preview",
+        json={"text": "Designed preview.", "design_prompt": "a deep commanding voice"},
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert "generation_id" in body
+    assert enqueue_mock.called
+
+
+def test_preview_with_emotion_folded_into_instruct(setup, monkeypatch):
+    """Preview with emotion kwarg passes the emotion as an instruct to generation."""
+    client = setup["client"]
+    cast_char_id = setup["cast_char_id"]
+    enqueue_mock = _mock_preview_deps(monkeypatch)
+
+    # We need to capture what run_generation was called with
+    run_gen_mock = MagicMock(return_value=AsyncMock())
+    monkeypatch.setattr(
+        "backend.services.book_characters.run_generation",
+        run_gen_mock,
+    )
+
+    r = client.post(
+        f"/characters/{cast_char_id}/preview",
+        json={"text": "Test.", "emotion": "angry"},
+    )
+    assert r.status_code == 200, r.text
+    # run_generation should have been called with instruct containing "angry"
+    assert run_gen_mock.called
+    call_kwargs = run_gen_mock.call_args
+    instruct_arg = (
+        call_kwargs.kwargs.get("instruct")
+        if call_kwargs.kwargs
+        else (call_kwargs[1].get("instruct") if call_kwargs[1] else None)
+    )
+    # instruct should reference the emotion
+    assert instruct_arg is not None, "Expected instruct to be set with emotion"
+    assert "angry" in instruct_arg, f"Expected 'angry' in instruct, got {instruct_arg!r}"
+
+
+def test_preview_without_any_voice_or_candidate_is_400(setup, monkeypatch):
+    """Preview with no assigned voice and no candidate returns 400."""
+    client = setup["client"]
+    uncast_char_id = setup["uncast_char_id"]
+    _mock_preview_deps(monkeypatch)
+
+    r = client.post(
+        f"/characters/{uncast_char_id}/preview",
+        json={},  # no text, no candidate, no assigned voice
+    )
+    assert r.status_code == 400

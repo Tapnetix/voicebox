@@ -240,6 +240,7 @@ def seeded(engine_and_session):
         "generated_seg_id": generated_seg.id,
         "generating_seg_id": generating_seg.id,
         "gen_id": gen.id,
+        "generating_char_id": generating_char.id,  # belongs to gen_book (different book)
     }
 
     db.close()
@@ -428,3 +429,25 @@ def test_change_delivery_invalidates_audio(client, seeded):
         f"Expected 'stale' but got '{body['audio']['status']}'"
     )
     assert body["delivery"] == "through gritted teeth"
+
+
+# ---------------------------------------------------------------------------
+# Fix 5: cross-book character_id reassignment must be rejected
+# ---------------------------------------------------------------------------
+
+
+def test_reassign_segment_to_character_from_different_book_400(client, seeded):
+    """PATCH segment with a character_id from a DIFFERENT book returns 400.
+
+    The segment belongs to book A; generating_char belongs to gen_book (book B).
+    Assigning generating_char to a segment from book A must be rejected.
+    """
+    # narration_seg belongs to book A (seeded["book_id"])
+    segment_id = seeded["narration_seg_id"]
+    # generating_char belongs to gen_book — a DIFFERENT book
+    wrong_book_char_id = seeded["generating_char_id"]
+
+    r = client.patch(f"/segments/{segment_id}", json={"character_id": wrong_book_char_id})
+    assert r.status_code == 400, (
+        f"Expected 400 for cross-book character assignment, got {r.status_code}: {r.text}"
+    )

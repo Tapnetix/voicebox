@@ -444,6 +444,12 @@ async def analyze_book(
 
     Returns a :class:`BookAnalysis` with per-chapter
     :class:`ChapterAnalysis` objects and a global character roster.
+
+    The roster is enriched with gender/age/vocal_description/archetype/color
+    via :func:`enrich_profiles` and each character is assigned a ``role``:
+    "major" for the top contributors (dialogue_count >= median of non-zero
+    counts, or explicitly the top half when there are ≥2 named characters)
+    and "minor" for the rest.
     """
     chapter_analyses: list[ChapterAnalysis] = []
     all_speakers: list[dict] = []
@@ -462,6 +468,36 @@ async def analyze_book(
             )
 
     global_characters = reconcile_characters(global_per_chunk, aliases={})
+
+    # --- Assign role: "major" / "minor" based on dialogue_count threshold ---
+    # Characters with dialogue_count >= the median count of all named characters
+    # are "major"; the rest are "minor".  With fewer than 2 characters, all are
+    # "major" so they get designed voices.
+    if global_characters:
+        counts = [c["dialogue_count"] for c in global_characters]
+        if len(counts) >= 2:
+            sorted_counts = sorted(counts, reverse=True)
+            # Top half (ceiling) are major
+            major_cutoff = max(1, sorted_counts[len(sorted_counts) // 2])
+        else:
+            major_cutoff = 0  # single character → always major
+        for char in global_characters:
+            char["role"] = "major" if char["dialogue_count"] >= major_cutoff else "minor"
+    # End role assignment
+
+    # --- Collect dialogue samples for enrichment ---
+    # Build a name→samples mapping from all chapter segments
+    samples: dict[str, list[str]] = {}
+    for ca in chapter_analyses:
+        for seg in ca.segments:
+            if seg.get("type") == "dialogue" and seg.get("speaker"):
+                speaker = seg["speaker"]
+                samples.setdefault(speaker, []).append(seg.get("text", ""))
+
+    # --- Enrich profiles with LLM-derived fields ---
+    global_characters = await enrich_profiles(
+        global_characters, samples=samples, model_size=model_size
+    )
 
     return BookAnalysis(
         chapters=chapter_analyses,

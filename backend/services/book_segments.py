@@ -99,6 +99,15 @@ def update_segment(
     changed = False
 
     if payload.character_id is not None and payload.character_id != seg.character_id:
+        # Fix 5: validate that the target character belongs to the same book
+        # as the segment's chapter (prevent cross-book reassignment).
+        if chapter is not None:
+            target_char = db.query(BookCharacter).filter_by(id=payload.character_id).first()
+            if target_char is None or target_char.book_id != chapter.book_id:
+                raise HTTPException(
+                    status_code=400,
+                    detail="character_id does not belong to the same book as this segment",
+                )
         seg.character_id = payload.character_id
         changed = True
 

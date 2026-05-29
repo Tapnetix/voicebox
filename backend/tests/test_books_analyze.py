@@ -396,3 +396,231 @@ def test_enqueue_analysis_flips_status_and_returns_task_id(
         )
     finally:
         verify_db.close()
+
+
+# ---------------------------------------------------------------------------
+# Fix 1: Integration test — analysis→casting seam (role + VoiceProfile type)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_integration_major_gets_designed_minor_gets_preset(
+    temp_db, seeded_book_id, monkeypatch
+):
+    """Integration: run_analysis_task with real cast_book (not mocked).
+
+    A major character (role='major', vocal_description set) must receive a
+    VoiceProfile with voice_type='designed'.
+    A minor character (role='minor') must receive a VoiceProfile with
+    voice_type='preset' (given a Kokoro language + non-exhausted pool).
+    """
+    from backend.database import VoiceProfile
+    from backend.services import book_analysis, book_events, literary_analysis
+    from backend.services.literary_analysis import BookAnalysis, ChapterAnalysis
+
+    # Realistic mock output: Holston is major (high dialogue count, vocal desc),
+    # Allison is minor.
+    major_char = {
+        "name": "Holston",
+        "dialogue_count": 10,
+        "confidence": 0.95,
+        "role": "major",
+        "gender": "male",
+        "age_range": "40s",
+        "vocal_description": "a deep, weathered male voice with quiet authority",
+        "archetype": "hero",
+        "color": "#3366cc",
+        "age_estimate": "40s",
+        "traits": ["stoic", "determined"],
+    }
+    minor_char = {
+        "name": "Allison",
+        "dialogue_count": 2,
+        "confidence": 0.8,
+        "role": "minor",
+        "gender": "female",
+        "age_range": "30s",
+        "vocal_description": None,
+        "archetype": None,
+        "color": "#cc3333",
+        "age_estimate": "30s",
+        "traits": [],
+    }
+
+    segments = [
+        {"type": "narration", "text": "Dark night.", "order": 0, "speaker": None, "emotion": None, "intensity": None},
+        {"type": "dialogue", "text": "Help me.", "order": 1, "speaker": "Holston", "emotion": None, "intensity": None},
+        {"type": "dialogue", "text": "No.", "order": 2, "speaker": "Allison", "emotion": None, "intensity": None},
+    ]
+    chapter = ChapterAnalysis(
+        segments=segments,
+        characters=[major_char, minor_char],
+        flagged=False,
+    )
+    fake_analysis = BookAnalysis(
+        chapters=[chapter],
+        characters=[major_char, minor_char],
+    )
+
+    async def fake_analyze_book(chapters, model_size=None):
+        return fake_analysis
+
+    monkeypatch.setattr(literary_analysis, "analyze_book", fake_analyze_book)
+
+    # Mock the Kokoro preset pool so cast_book can assign a preset to Allison
+    import backend.services.voice_casting as vc_module
+    monkeypatch.setattr(vc_module, "_get_preset_ids", lambda engine: ["af_heart", "af_sky"])
+
+    # Suppress SSE publish noise
+    monkeypatch.setattr(book_events, "publish", lambda bid, p: None)
+
+    # Run with REAL cast_book (not mocked)
+    await book_analysis.run_analysis_task(
+        seeded_book_id, model_size="1.7B", db=temp_db, narrator_voice_id="auto"
+    )
+
+    # Retrieve materialized characters
+    chars = temp_db.query(BookCharacter).filter_by(book_id=seeded_book_id).all()
+    char_by_name = {c.name: c for c in chars}
+
+    holston = char_by_name.get("Holston")
+    allison = char_by_name.get("Allison")
+
+    assert holston is not None, "Holston character not materialized"
+    assert allison is not None, "Allison character not materialized"
+
+    # Major character must have role='major'
+    assert holston.role == "major", f"Expected role='major' for Holston, got {holston.role!r}"
+    # Minor character must have role='minor'
+    assert allison.role == "minor", f"Expected role='minor' for Allison, got {allison.role!r}"
+
+    # Major must get a designed VoiceProfile
+    assert holston.profile_id is not None, "Holston has no profile_id"
+    holston_profile = temp_db.get(VoiceProfile, holston.profile_id)
+    assert holston_profile is not None, "Holston's VoiceProfile not found"
+    assert holston_profile.voice_type == "designed", (
+        f"Expected Holston voice_type='designed', got {holston_profile.voice_type!r}"
+    )
+
+    # Minor must get a preset VoiceProfile (language="en" → Kokoro eligible)
+    assert allison.profile_id is not None, "Allison has no profile_id"
+    allison_profile = temp_db.get(VoiceProfile, allison.profile_id)
+    assert allison_profile is not None, "Allison's VoiceProfile not found"
+    assert allison_profile.voice_type == "preset", (
+        f"Expected Allison voice_type='preset', got {allison_profile.voice_type!r}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Fix 2: narrator_voice_id pre-assignment test
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_narrator_voice_id_applied_before_casting(
+    temp_db, seeded_book_id, monkeypatch
+):
+    """When narrator_voice_id is a real profile id, the narrator gets that profile."""
+    from backend.database import VoiceProfile
+    from backend.services import book_analysis, book_events, literary_analysis
+
+    fake_analysis = _make_fake_book_analysis(["Holston"])
+
+    async def fake_analyze_book(chapters, model_size=None):
+        return fake_analysis
+
+    monkeypatch.setattr(literary_analysis, "analyze_book", fake_analyze_book)
+    monkeypatch.setattr(book_events, "publish", lambda bid, p: None)
+
+    import backend.services.voice_casting as vc_module
+    monkeypatch.setattr(vc_module, "_get_preset_ids", lambda engine: ["af_heart"])
+
+    # Seed a pre-existing voice profile to use as narrator_voice_id
+    narrator_profile = VoiceProfile(
+        id=str(uuid.uuid4()),
+        name="Custom Narrator",
+        voice_type="preset",
+        preset_engine="kokoro",
+        preset_voice_id="af_heart",
+        default_engine="kokoro",
+        is_library=True,
+    )
+    temp_db.add(narrator_profile)
+    temp_db.commit()
+
+    narrator_profile_id = narrator_profile.id
+
+    await book_analysis.run_analysis_task(
+        seeded_book_id,
+        model_size="1.7B",
+        db=temp_db,
+        narrator_voice_id=narrator_profile_id,
+    )
+
+    # The narrator character should have the pre-assigned profile
+    narrator_char = (
+        temp_db.query(BookCharacter)
+        .filter_by(book_id=seeded_book_id, is_narrator=True)
+        .first()
+    )
+    assert narrator_char is not None
+    assert narrator_char.profile_id == narrator_profile_id, (
+        f"Expected narrator profile_id={narrator_profile_id!r}, "
+        f"got {narrator_char.profile_id!r}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Fix 4: dialogue_count recomputed from materialized segments
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_materialization_recounts_dialogue_from_segments(
+    temp_db, seeded_book_id, monkeypatch
+):
+    """After materialization, dialogue_count reflects real BookSegment rows.
+
+    The narrator has both narration and dialogue segments assigned to it
+    (via the analysis pipeline); its recomputed count must reflect ALL
+    segments (narrator counting rule).
+    """
+    from backend.database import BookSegment
+    from backend.services import book_analysis, book_events, literary_analysis
+
+    fake_analysis = _make_fake_book_analysis(["Holston"])
+
+    async def fake_analyze_book(chapters, model_size=None):
+        return fake_analysis
+
+    monkeypatch.setattr(literary_analysis, "analyze_book", fake_analyze_book)
+    monkeypatch.setattr(book_events, "publish", lambda bid, p: None)
+
+    import backend.services.voice_casting as vc_module
+    monkeypatch.setattr(vc_module, "_get_preset_ids", lambda engine: ["af_heart"])
+    monkeypatch.setattr(vc_module, "cast_book", lambda *a, **k: None)
+
+    await book_analysis.run_analysis_task(
+        seeded_book_id, model_size="1.7B", db=temp_db
+    )
+
+    narrator = (
+        temp_db.query(BookCharacter)
+        .filter_by(book_id=seeded_book_id, is_narrator=True)
+        .first()
+    )
+    assert narrator is not None
+
+    # Count segments actually assigned to the narrator in the DB
+    actual_seg_count = (
+        temp_db.query(BookSegment)
+        .filter(BookSegment.character_id == narrator.id)
+        .count()
+    )
+
+    # The narrator's dialogue_count should equal its total segment count
+    # (because _recount_dialogue for is_narrator=True counts all segments)
+    assert narrator.dialogue_count == actual_seg_count, (
+        f"Narrator dialogue_count={narrator.dialogue_count} but has "
+        f"{actual_seg_count} segments in DB"
+    )

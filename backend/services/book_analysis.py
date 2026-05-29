@@ -69,9 +69,6 @@ async def run_analysis_task(
     book_id: str,
     *,
     model_size: str = "1.7B",
-    # narrator_voice_id (auto | profile-id) is reserved for explicit narrator-voice
-    # selection; not yet forwarded to voice_casting.cast_book — see B3. Forwarded
-    # here so the API contract is stable.
     narrator_voice_id: str = "auto",
     db: Session,
 ) -> None:
@@ -80,12 +77,14 @@ async def run_analysis_task(
     Args:
         book_id:           Primary key of the book to analyse.
         model_size:        LLM size to use for literary analysis ("0.6B","1.7B","4B").
-        narrator_voice_id: Voice hint for the narrator ("auto" or a profile id).
+        narrator_voice_id: Voice hint for the narrator ("auto" or a VoiceProfile id).
+                           When a real profile id is given the narrator is pre-assigned
+                           before casting so cast_book leaves it alone.
         db:                SQLAlchemy session — caller owns the lifecycle.
 
     Status transitions:
-        analysing → analysed   on success
-        analysing → error      on any unhandled exception
+        analyzing → analyzed   on success
+        analyzing → error      on any unhandled exception
 
     Events published on the book channel (contract-04):
         analysis_progress  (stage: detect|reconcile|profile|cast, progress 0-100)
@@ -95,6 +94,7 @@ async def run_analysis_task(
     """
     from .. import database
     from . import book_events, literary_analysis, voice_casting
+    from .book_character_structure import _recount_dialogue
 
     def _pub(payload: dict) -> None:
         book_events.publish(book_id, payload)
@@ -178,6 +178,7 @@ async def run_analysis_task(
                 age_range=char_data.get("age_estimate"),
                 vocal_description=char_data.get("vocal_description"),
                 archetype=char_data.get("archetype"),
+                role=char_data.get("role"),  # "major" | "minor" | None
             )
             db.add(char)
             db.flush()
@@ -203,6 +204,14 @@ async def run_analysis_task(
 
         # ── Stage: cast (VoiceProfile rows via voice_casting) ─────────────
         _pub({"type": "analysis_progress", "stage": "cast", "progress": 75})
+
+        # Fix 2: if narrator_voice_id is a real profile id, pre-assign the
+        # narrator before calling cast_book so casting leaves it alone.
+        if narrator_voice_id and narrator_voice_id not in ("auto", None):
+            narrator_profile = db.get(database.VoiceProfile, narrator_voice_id)
+            if narrator_profile is not None:
+                narrator.profile_id = narrator_voice_id
+                db.flush()
 
         # Build co-occurrence set from per-chapter character mentions
         cooccurrence: set[tuple[str, str]] = set()
@@ -255,6 +264,12 @@ async def run_analysis_task(
                 )
                 db.add(segment)
 
+        db.commit()
+
+        # Fix 4: recompute every character's dialogue_count from the materialized
+        # BookSegment rows using the same rule as merge/split/delete operations.
+        for row in char_rows:
+            _recount_dialogue(row.id, db)
         db.commit()
 
         # Reload char_rows to get profile_ids populated by cast_book
@@ -327,7 +342,7 @@ def enqueue_analysis(
         narrator_voice_id: Voice hint for narrator; defaults to "auto".
 
     Returns:
-        A task_id string (the asyncio Task object's hex address, opaque to clients).
+        A task_id string (a fresh uuid4, opaque to clients).
     """
     from .. import database
     from . import task_queue
