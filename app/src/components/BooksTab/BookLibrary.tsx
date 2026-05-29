@@ -103,7 +103,7 @@ export function BookLibrary() {
         </div>
         {books.length > 0 && (
           <Button onClick={handleImport} data-testid="import-book-btn">
-            {t('books.import')}
+            {t('books.import.btn')}
           </Button>
         )}
       </div>
@@ -114,7 +114,7 @@ export function BookLibrary() {
           <CardContent className="py-12 flex flex-col items-center gap-4">
             <p className="text-muted-foreground max-w-sm">{t('books.empty')}</p>
             <Button onClick={handleImport} data-testid="import-book-btn">
-              {t('books.import')}
+              {t('books.import.btn')}
             </Button>
           </CardContent>
         </Card>
