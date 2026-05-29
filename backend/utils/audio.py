@@ -8,6 +8,42 @@ import librosa
 from typing import Tuple, Optional
 
 
+def normalize_loudness(
+    audio: np.ndarray,
+    sample_rate: int = 24000,
+    target_lufs: float = -18.0,
+) -> np.ndarray:
+    """
+    Normalize audio to a target integrated loudness (LUFS) using pyloudnorm.
+
+    Implements ITU-R BS.1770-4 gated loudness measurement and applies a linear
+    gain to reach *target_lufs*.  Silent or near-silent signals (where pyloudnorm
+    returns -inf) are returned unchanged to avoid divide-by-zero.
+
+    Args:
+        audio: Mono audio array (float32 or float64).
+        sample_rate: Sample rate of the audio in Hz.
+        target_lufs: Target integrated loudness in LUFS (e.g. -18.0 for audiobooks).
+
+    Returns:
+        Loudness-normalized audio array (same dtype/shape as input).
+    """
+    import pyloudnorm as pyln
+
+    audio = audio.astype(np.float32, copy=False)
+
+    meter = pyln.Meter(sample_rate)
+    measured_lufs = meter.integrated_loudness(audio)
+
+    # pyloudnorm returns -inf for silence / very short clips
+    if np.isinf(measured_lufs) or np.isnan(measured_lufs):
+        return audio
+
+    gain_db = target_lufs - measured_lufs
+    gain_linear = 10.0 ** (gain_db / 20.0)
+    return audio * gain_linear
+
+
 def normalize_audio(
     audio: np.ndarray,
     target_db: float = -20.0,
