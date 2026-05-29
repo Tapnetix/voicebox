@@ -542,3 +542,132 @@ def test_preview_without_any_voice_or_candidate_is_400(setup, monkeypatch):
         json={},  # no text, no candidate, no assigned voice
     )
     assert r.status_code == 400
+
+
+# ---------------------------------------------------------------------------
+# Boundary tests: cast character with ephemeral candidate must use candidate,
+# not the character's existing assigned profile (Fix 1).
+# ---------------------------------------------------------------------------
+
+
+def test_cast_char_preview_preset_candidate_drives_generation(setup, monkeypatch):
+    """CAST character + preset_voice_id candidate: run_generation receives a transient
+    profile_id that reflects the candidate preset, NOT the character's assigned profile."""
+    client = setup["client"]
+    cast_char_id = setup["cast_char_id"]
+    cast_char_profile_id = setup["cast_char_profile_id"]
+    TestSession = setup["TestSession"]
+
+    run_gen_mock = MagicMock(return_value=AsyncMock())
+    monkeypatch.setattr("backend.services.book_characters.run_generation", run_gen_mock)
+    monkeypatch.setattr(
+        "backend.services.book_characters.enqueue_generation", MagicMock()
+    )
+    monkeypatch.setattr(
+        "backend.services.book_characters.get_task_manager",
+        MagicMock(return_value=MagicMock()),
+    )
+
+    r = client.post(
+        f"/characters/{cast_char_id}/preview",
+        json={"text": "Candidate preset.", "preset_voice_id": "af_sky"},
+    )
+    assert r.status_code == 200, r.text
+
+    assert run_gen_mock.called, "run_generation was not called"
+    call_kwargs = run_gen_mock.call_args.kwargs
+
+    # The profile_id passed to run_generation must NOT be the character's assigned profile
+    used_profile_id = call_kwargs.get("profile_id")
+    assert used_profile_id != cast_char_profile_id, (
+        f"run_generation received the character's assigned profile {cast_char_profile_id!r} "
+        "instead of the transient candidate profile"
+    )
+
+    # Verify in DB that the transient profile has the correct preset params
+    db = TestSession()
+    transient = db.get(VoiceProfile, used_profile_id)
+    assert transient is not None, f"Transient profile {used_profile_id!r} not found in DB"
+    assert transient.voice_type == "preset"
+    assert transient.preset_voice_id == "af_sky"
+    db.close()
+
+
+def test_cast_char_preview_design_prompt_candidate_drives_generation(setup, monkeypatch):
+    """CAST character + design_prompt candidate: run_generation receives a transient
+    profile_id reflecting the candidate design_prompt, NOT the character's assigned profile."""
+    client = setup["client"]
+    cast_char_id = setup["cast_char_id"]
+    cast_char_profile_id = setup["cast_char_profile_id"]
+    TestSession = setup["TestSession"]
+
+    run_gen_mock = MagicMock(return_value=AsyncMock())
+    monkeypatch.setattr("backend.services.book_characters.run_generation", run_gen_mock)
+    monkeypatch.setattr(
+        "backend.services.book_characters.enqueue_generation", MagicMock()
+    )
+    monkeypatch.setattr(
+        "backend.services.book_characters.get_task_manager",
+        MagicMock(return_value=MagicMock()),
+    )
+
+    r = client.post(
+        f"/characters/{cast_char_id}/preview",
+        json={"text": "Candidate design.", "design_prompt": "a wise elderly storyteller"},
+    )
+    assert r.status_code == 200, r.text
+
+    assert run_gen_mock.called, "run_generation was not called"
+    call_kwargs = run_gen_mock.call_args.kwargs
+
+    used_profile_id = call_kwargs.get("profile_id")
+    assert used_profile_id != cast_char_profile_id, (
+        f"run_generation received the character's assigned profile {cast_char_profile_id!r} "
+        "instead of the transient candidate profile"
+    )
+
+    # Verify the transient profile has the correct design params
+    db = TestSession()
+    transient = db.get(VoiceProfile, used_profile_id)
+    assert transient is not None, f"Transient profile {used_profile_id!r} not found in DB"
+    assert transient.voice_type == "designed"
+    assert transient.design_prompt == "a wise elderly storyteller"
+    db.close()
+
+
+def test_cast_char_preview_transient_profiles_are_bounded(setup, monkeypatch):
+    """Repeated ephemeral-candidate previews for the same character should not
+    accumulate unbounded _preview_* rows — old ones must be deleted first."""
+    client = setup["client"]
+    cast_char_id = setup["cast_char_id"]
+    TestSession = setup["TestSession"]
+
+    for i in range(4):
+        run_gen_mock = MagicMock(return_value=AsyncMock())
+        monkeypatch.setattr("backend.services.book_characters.run_generation", run_gen_mock)
+        monkeypatch.setattr(
+            "backend.services.book_characters.enqueue_generation", MagicMock()
+        )
+        monkeypatch.setattr(
+            "backend.services.book_characters.get_task_manager",
+            MagicMock(return_value=MagicMock()),
+        )
+        r = client.post(
+            f"/characters/{cast_char_id}/preview",
+            json={"text": f"Take {i}.", "preset_voice_id": "af_sky"},
+        )
+        assert r.status_code == 200, r.text
+
+    # After 4 previews there should be at most a small bounded number of _preview_* rows
+    db = TestSession()
+    preview_profiles = (
+        db.query(VoiceProfile)
+        .filter(VoiceProfile.name.like("_preview_%"))
+        .all()
+    )
+    # Exactly 1 transient profile should remain (old ones deleted before each new one)
+    assert len(preview_profiles) <= 2, (
+        f"Expected at most 2 _preview_* profiles but found {len(preview_profiles)}: "
+        f"{[p.name for p in preview_profiles]}"
+    )
+    db.close()

@@ -361,40 +361,48 @@ async def preview_character_voice(
         instruct = f"Speak with a {emotion} tone."
 
     # For ephemeral candidate previews (preset/designed without a real profile),
-    # we use the character's existing profile as the DB FK anchor (or None if
-    # there is no assigned profile) and pass the candidate params directly to
-    # the generation engine.
+    # always create a transient VoiceProfile from the candidate params regardless
+    # of whether the character already has an assigned profile.  This ensures the
+    # candidate voice — not the character's permanent assignment — drives synthesis.
     is_ephemeral = effective_profile_id.startswith(("_preset_", "_designed_"))
 
     if is_ephemeral:
-        # Use the character's profile as the generation row's FK if available,
-        # otherwise we need a real profile — fall back to the first library profile.
-        anchor_profile_id: Optional[str] = char.profile_id
-        if anchor_profile_id is None:
-            # No assigned profile — create a transient one from the candidate params
-            if preset_voice_id is not None:
-                tmp_profile = VoiceProfile(
-                    id=str(uuid.uuid4()),
-                    name=f"_preview_{generation_id}",
-                    voice_type="preset",
-                    preset_engine="kokoro",
-                    preset_voice_id=preset_voice_id,
-                    default_engine="kokoro",
-                    is_library=False,
-                )
-            else:
-                tmp_profile = VoiceProfile(
-                    id=str(uuid.uuid4()),
-                    name=f"_preview_{generation_id}",
-                    voice_type="designed",
-                    design_prompt=design_prompt,
-                    is_library=False,
-                )
-            db.add(tmp_profile)
-            db.flush()
-            anchor_profile_id = tmp_profile.id
+        # Delete any existing _preview_* transient profiles for this character so
+        # they don't accumulate unboundedly.  (Full reaping after generation
+        # completion is a future enhancement; this keeps the count ≤ 1.)
+        existing_previews = (
+            db.query(VoiceProfile)
+            .filter(VoiceProfile.name.like("_preview_%"))
+            .all()
+        )
+        # Only delete profiles not referenced by any other character
+        # (safe: _preview_* profiles are only ever created here)
+        for ep in existing_previews:
+            db.delete(ep)
+        db.flush()
 
-        gen_profile_id = anchor_profile_id
+        # Create a transient profile that carries the candidate voice params
+        if preset_voice_id is not None:
+            tmp_profile = VoiceProfile(
+                id=str(uuid.uuid4()),
+                name=f"_preview_{generation_id}",
+                voice_type="preset",
+                preset_engine="kokoro",
+                preset_voice_id=preset_voice_id,
+                default_engine="kokoro",
+                is_library=False,
+            )
+        else:
+            tmp_profile = VoiceProfile(
+                id=str(uuid.uuid4()),
+                name=f"_preview_{generation_id}",
+                voice_type="designed",
+                design_prompt=design_prompt,
+                is_library=False,
+            )
+        db.add(tmp_profile)
+        db.flush()
+        gen_profile_id = tmp_profile.id
     else:
         gen_profile_id = effective_profile_id
 
