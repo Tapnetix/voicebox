@@ -424,3 +424,193 @@ class TestRobustness:
         assert len(calls) > 0, "Progress callback should have been called at least once"
         # Final call should be 100%
         assert calls[-1][0] == 100
+
+
+# ---------------------------------------------------------------------------
+# Fix 1: scene_pause_s is actually applied for scene-break segments
+# ---------------------------------------------------------------------------
+
+
+from backend.services.audiobook_export import _stitch_chapter  # noqa: E402
+
+
+class TestSceneBreak:
+    """Verify that is_scene_break markers cause scene_pause_s to be used."""
+
+    def _make_wav(self, path: str, duration: float = 0.2, sr: int = 24000) -> None:
+        _make_sine_wav(path, duration=duration, sr=sr)
+
+    def test_scene_break_produces_longer_duration(self, tmp_path):
+        """Chapter with a scene-break marker has a longer duration than without one."""
+        seg_a = str(tmp_path / "a.wav")
+        seg_b = str(tmp_path / "b.wav")
+        seg_c = str(tmp_path / "c.wav")
+        self._make_wav(seg_a)
+        self._make_wav(seg_b)
+        self._make_wav(seg_c)
+
+        inter_pause = 0.1
+        scene_pause = 1.0  # deliberately much larger
+
+        # Without scene break: all pauses are inter_pause
+        plain_paths = [seg_a, seg_b, seg_c]
+        plain_audio = _stitch_chapter(
+            plain_paths,
+            inter_segment_pause_s=inter_pause,
+            scene_pause_s=scene_pause,
+        )
+
+        # With a scene break before seg_b: pause before seg_b becomes scene_pause
+        scene_paths = [
+            seg_a,
+            {"path": seg_b, "is_scene_break": True},
+            seg_c,
+        ]
+        scene_audio = _stitch_chapter(
+            scene_paths,
+            inter_segment_pause_s=inter_pause,
+            scene_pause_s=scene_pause,
+        )
+
+        assert plain_audio is not None
+        assert scene_audio is not None
+
+        # scene_audio should be longer by roughly (scene_pause - inter_pause) seconds
+        plain_len = len(plain_audio)
+        scene_len = len(scene_audio)
+        assert scene_len > plain_len, (
+            f"Scene-break audio ({scene_len} samples) should be longer than plain "
+            f"audio ({plain_len} samples) when scene_pause > inter_segment_pause"
+        )
+
+    def test_no_scene_break_metadata_unchanged(self, tmp_path):
+        """Plain string paths produce the same result as before (backward compat)."""
+        seg_a = str(tmp_path / "a.wav")
+        seg_b = str(tmp_path / "b.wav")
+        self._make_wav(seg_a)
+        self._make_wav(seg_b)
+
+        inter_pause = 0.3
+        plain = _stitch_chapter(
+            [seg_a, seg_b],
+            inter_segment_pause_s=inter_pause,
+            scene_pause_s=0.8,
+        )
+        # Dict entries with is_scene_break=False should behave like plain strings
+        dict_no_break = _stitch_chapter(
+            [{"path": seg_a, "is_scene_break": False}, {"path": seg_b}],
+            inter_segment_pause_s=inter_pause,
+            scene_pause_s=0.8,
+        )
+        assert plain is not None
+        assert dict_no_break is not None
+        assert len(plain) == len(dict_no_break), (
+            "Dict entries without is_scene_break should produce identical duration "
+            "to plain string entries"
+        )
+
+    def test_scene_break_on_first_segment_ignored(self, tmp_path):
+        """A scene-break flag on the first segment is silently ignored (no leading silence)."""
+        seg_a = str(tmp_path / "a.wav")
+        seg_b = str(tmp_path / "b.wav")
+        self._make_wav(seg_a)
+        self._make_wav(seg_b)
+
+        # Mark the very first segment as a scene break — should behave identically
+        # to not marking it (no leading silence added).
+        first_break = _stitch_chapter(
+            [{"path": seg_a, "is_scene_break": True}, seg_b],
+            inter_segment_pause_s=0.1,
+            scene_pause_s=1.0,
+        )
+        plain = _stitch_chapter(
+            [seg_a, seg_b],
+            inter_segment_pause_s=0.1,
+            scene_pause_s=1.0,
+        )
+        assert first_break is not None
+        assert plain is not None
+        assert len(first_break) == len(plain), (
+            "Scene-break on the first segment should not add leading silence"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Fix 2: M4B chapter markers are correct when a chapter is entirely skipped
+# ---------------------------------------------------------------------------
+
+
+class TestM4BSkippedChapter:
+    """Verify that skipped chapters do not corrupt M4B chapter marker alignment."""
+
+    def test_skipped_chapter_markers_aligned(self, tmp_path):
+        """When chapter 2 is fully skipped (bad segments), chapters 1 and 3
+        must appear with their correct titles in the M4B output — not shifted."""
+        wav_a = str(tmp_path / "ch1_seg0.wav")
+        wav_c = str(tmp_path / "ch3_seg0.wav")
+        _make_sine_wav(wav_a, duration=0.5)
+        _make_sine_wav(wav_c, freq=660.0, duration=0.5)
+
+        chapters = [
+            {
+                "number": 1,
+                "title": "The Beginning",
+                "segment_paths": [wav_a],
+            },
+            {
+                "number": 2,
+                "title": "GHOST CHAPTER",
+                "segment_paths": ["/nonexistent/bad.wav"],  # entirely missing
+            },
+            {
+                "number": 3,
+                "title": "The End",
+                "segment_paths": [wav_c],
+            },
+        ]
+
+        out_path, _ = export_book(
+            chapters=chapters,
+            output_dir=str(tmp_path / "out"),
+            options={"format": "m4b", "title": "Skip Test"},
+        )
+
+        markers = read_chapter_markers(out_path)
+        titles = [m["title"] for m in markers]
+
+        # Only chapters 1 and 3 produced audio
+        assert len(markers) == 2, f"Expected 2 markers (ch1+ch3), got {len(markers)}: {markers}"
+        assert "The Beginning" in titles, f"'The Beginning' missing from markers: {titles}"
+        assert "The End" in titles, f"'The End' missing from markers: {titles}"
+        assert "GHOST CHAPTER" not in titles, (
+            f"Skipped chapter should not appear in markers: {titles}"
+        )
+
+    def test_skipped_chapter_start_times_correct(self, tmp_path):
+        """Chapter 1 must start at 0; chapter 3 must start strictly after ch1 ends."""
+        wav_a = str(tmp_path / "ch1.wav")
+        wav_c = str(tmp_path / "ch3.wav")
+        _make_sine_wav(wav_a, duration=0.5)
+        _make_sine_wav(wav_c, freq=660.0, duration=0.5)
+
+        chapters = [
+            {"number": 1, "title": "Alpha", "segment_paths": [wav_a]},
+            {"number": 2, "title": "Ghost", "segment_paths": ["/nonexistent/x.wav"]},
+            {"number": 3, "title": "Omega", "segment_paths": [wav_c]},
+        ]
+
+        out_path, _ = export_book(
+            chapters=chapters,
+            output_dir=str(tmp_path / "out"),
+            options={"format": "m4b", "title": "Start Time Test"},
+        )
+
+        markers = read_chapter_markers(out_path)
+        assert len(markers) == 2
+        starts = [m["start"] for m in markers]
+        assert starts[0] == pytest.approx(0.0, abs=0.05), (
+            f"First marker should start near 0s, got {starts[0]}"
+        )
+        assert starts[1] > starts[0], (
+            f"Second marker ({starts[1]}) should start after first ({starts[0]})"
+        )

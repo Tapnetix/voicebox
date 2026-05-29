@@ -21,7 +21,7 @@ import subprocess
 import tempfile
 import zipfile
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import soundfile as sf
@@ -53,7 +53,7 @@ def _make_silence(duration_s: float, sample_rate: int = DEFAULT_SAMPLE_RATE) -> 
 
 
 def _stitch_chapter(
-    segment_paths: List[str],
+    segment_paths: List[Union[str, Dict[str, Any]]],
     sample_rate: int = DEFAULT_SAMPLE_RATE,
     inter_segment_pause_s: float = DEFAULT_INTER_SEGMENT_PAUSE_S,
     scene_pause_s: float = DEFAULT_SCENE_PAUSE_S,
@@ -62,21 +62,48 @@ def _stitch_chapter(
 
     Missing or unreadable files are skipped gracefully.  Returns ``None`` if
     *all* segments fail to load.
+
+    Each entry in *segment_paths* may be either:
+
+    * a plain ``str`` path to a WAV file, **or**
+    * a ``dict`` with at least a ``"path"`` key and an optional boolean
+      ``"is_scene_break"`` key.  When ``is_scene_break`` is ``True``, the
+      pause inserted *before* this segment (if it is not the first loaded
+      segment) will be *scene_pause_s* instead of *inter_segment_pause_s*,
+      allowing scene/paragraph breaks to have noticeably longer gaps.
+
+    Backward-compatible: if all entries are plain strings, behavior is
+    identical to the original implementation (inter-segment pauses only).
     """
     parts: List[np.ndarray] = []
     inter_silence = _make_silence(inter_segment_pause_s, sample_rate)
+    scene_silence = _make_silence(scene_pause_s, sample_rate)
 
-    for i, path in enumerate(segment_paths):
+    loaded_count = 0  # number of segments successfully loaded so far
+
+    for entry in segment_paths:
+        # Normalize entry to (path, is_scene_break)
+        if isinstance(entry, dict):
+            path = entry["path"]
+            is_scene_break = bool(entry.get("is_scene_break", False))
+        else:
+            path = entry
+            is_scene_break = False
+
         try:
             audio, _ = load_audio(path, sample_rate=sample_rate, mono=True)
         except Exception:
             continue  # skip bad segments
 
-        parts.append(audio)
+        # Insert the appropriate pause before this segment (not before the first loaded one)
+        if loaded_count > 0:
+            if is_scene_break:
+                parts.append(scene_silence)
+            else:
+                parts.append(inter_silence)
 
-        # Append inter-segment pause (not after the last segment)
-        if i < len(segment_paths) - 1:
-            parts.append(inter_silence)
+        parts.append(audio)
+        loaded_count += 1
 
     if not parts:
         return None
@@ -90,25 +117,6 @@ def _write_wav_to_tmp(audio: np.ndarray, sample_rate: int) -> str:
     os.close(fd)
     sf.write(path, audio, sample_rate)
     return path
-
-
-def _ffmpeg_concat_wavs(wav_paths: List[str], out_path: str) -> None:
-    """Concatenate WAV files using FFmpeg concat demuxer to *out_path* (WAV)."""
-    fd, list_path = tempfile.mkstemp(suffix=".txt")
-    try:
-        with os.fdopen(fd, "w") as f:
-            for p in wav_paths:
-                f.write(f"file '{p}'\n")
-        cmd = [
-            "ffmpeg", "-y",
-            "-f", "concat", "-safe", "0",
-            "-i", list_path,
-            "-c", "copy",
-            out_path,
-        ]
-        _run_ffmpeg(cmd)
-    finally:
-        Path(list_path).unlink(missing_ok=True)
 
 
 def _run_ffmpeg(cmd: List[str]) -> None:
@@ -327,7 +335,11 @@ def export_book(
         Ordered list of chapter dicts, each with keys:
           * ``number``        – int, 1-based chapter number
           * ``title``         – str, chapter display title
-          * ``segment_paths`` – list[str], ordered paths to rendered WAV files
+          * ``segment_paths`` – list of segment entries; each entry is either a
+            plain path ``str`` **or** a ``dict`` with ``"path"`` (str) and
+            optional ``"is_scene_break"`` (bool).  When ``is_scene_break`` is
+            ``True``, the pause before that segment uses ``scene_pause_s``
+            instead of ``inter_segment_pause_s``.
 
     output_dir:
         Directory where the output file will be written (created if absent).
@@ -383,6 +395,10 @@ def export_book(
     # ------------------------------------------------------------------
     chapter_audios: List[np.ndarray] = []
     chapter_starts_s: List[float] = []
+    # chapters_with_audio is aligned 1:1 with chapter_audios / chapter_starts_s;
+    # chapters that produce no audio (all segments missing) are excluded so that
+    # M4B chapter markers are never mis-paired with the wrong titles.
+    chapters_with_audio: List[Dict[str, Any]] = []
     chapter_pause_silence = _make_silence(chapter_pause, sample_rate)
 
     n_chapters = len(chapters)
@@ -404,6 +420,7 @@ def export_book(
 
         chapter_starts_s.append(current_time_s)
         chapter_audios.append(ch_audio)
+        chapters_with_audio.append(ch)
         total_audio_parts.append(ch_audio)
         current_time_s += len(ch_audio) / sample_rate
 
@@ -443,7 +460,7 @@ def export_book(
             _encode_aac_m4b(
                 wav_path=master_wav,
                 out_path=out_path,
-                chapters=chapters,
+                chapters=chapters_with_audio,
                 chapter_starts_s=chapter_starts_s,
                 title=title,
                 author=author,
@@ -471,7 +488,7 @@ def export_book(
             with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
                 # We need per-chapter WAVs for individual MP3 encoding
                 n_ch_audio = len(chapter_audios)
-                for i, (ch, ch_audio) in enumerate(zip(chapters, chapter_audios)):
+                for i, (ch, ch_audio) in enumerate(zip(chapters_with_audio, chapter_audios)):
                     ch_pct = int(70 + (i / max(n_ch_audio, 1)) * 25)
                     ch_num = ch.get("number", i + 1)
                     ch_title = ch.get("title", f"Chapter {ch_num}")
