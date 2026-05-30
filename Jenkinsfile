@@ -1,25 +1,30 @@
 // Voicebox cross-platform desktop build.
 //
-// Builds the Tauri desktop app + bundled Python server sidecar on Linux,
-// macOS, and Windows, and archives the platform installers. Drives the repo's
-// own `just` recipes (just setup → just build) so the build stays in lockstep
-// with local development.
+// Builds the Tauri desktop app + bundled Python server sidecar and archives the
+// platform installers. Drives the repo's own `just` recipes so CI stays in
+// lockstep with local development:
 //
-//   just setup  → python venv + `pip install -r backend/requirements.txt`
-//                 (incl. the git-only TTS engines, which resolve fine on real
-//                 agents) + `bun install`
-//   just build  → scripts/build-server.sh (PyInstaller → voicebox-server /
-//                 voicebox-mcp sidecars) + `cd tauri && bun run tauri build`
-//                 (bundle.targets = "all" → per-platform installers)
+//   just setup        → python venv + `pip install -r backend/requirements.txt`
+//                       (incl. the git-only TTS engines — they resolve fine on
+//                       real agents) + `bun install`
+//   just build-server → scripts/build-server.sh (PyInstaller → voicebox-server /
+//                       voicebox-mcp sidecars, copied into tauri/src-tauri/binaries)
+//   tauri build --bundles … → per-platform installers
 //
-// Agents (labels): Linux `pockeo-linux`, macOS `macos`, Windows `pockeo-windows`.
+// Each platform runs as a single shell so PATH bootstrapping persists across
+// the toolchain/setup/build steps.
+//
+// Agents (labels): Linux `pockeo-linux`, macOS `macos`. Windows (`pockeo-windows`)
+// is wired but disabled — those agents can't yet clone over SSH (the
+// github-pockeo-ssh deploy key + known_hosts aren't provisioned there); enable
+// the stage once that's set up.
 
 pipeline {
     agent none
 
     options {
         timestamps()
-        timeout(time: 120, unit: 'MINUTES')
+        timeout(time: 180, unit: 'MINUTES')
         buildDiscarder(logRotator(numToKeepStr: '15'))
         disableConcurrentBuilds()
     }
@@ -27,7 +32,6 @@ pipeline {
     environment {
         CARGO_TERM_COLOR = 'always'
         RUST_BACKTRACE = '1'
-        // Non-interactive installers
         CI = 'true'
     }
 
@@ -37,44 +41,39 @@ pipeline {
             parallel {
 
                 // ─── Linux ──────────────────────────────────────────────────
+                // Bundle deb + rpm only. AppImage is skipped: tauri's AppImage
+                // bundler downloads linuxdeploy tooling and stalls on these
+                // agents — add it back once that tooling is cached locally.
                 stage('Linux') {
                     agent { label 'pockeo-linux' }
-                    environment {
-                        PATH = "${env.HOME}/.cargo/bin:${env.HOME}/.bun/bin:${env.HOME}/.local/bin:${env.PATH}"
+                    steps {
+                        sh '''
+                            set -eu
+                            export PATH="$HOME/.cargo/bin:$HOME/.bun/bin:$HOME/.local/bin:$PATH"
+
+                            echo "=== Toolchain ==="
+                            rustc --version && cargo --version
+                            command -v bun  >/dev/null 2>&1 || curl -fsSL https://bun.sh/install | bash
+                            export PATH="$HOME/.bun/bin:$PATH"
+                            command -v just >/dev/null 2>&1 || cargo install just --locked
+                            bun --version && just --version
+                            python3 --version
+
+                            echo "=== Setup (venv + deps + bun install) ==="
+                            just setup
+
+                            echo "=== Build sidecar ==="
+                            just build-server
+
+                            echo "=== Build Tauri bundles (deb, rpm) ==="
+                            ( cd tauri && bun run tauri build --bundles deb,rpm )
+                        '''
                     }
-                    stages {
-                        stage('Linux: Toolchain') {
-                            steps {
-                                sh '''
-                                    set -eu
-                                    echo "=== rust ===" && rustc --version && cargo --version
-                                    echo "=== bun ==="
-                                    command -v bun >/dev/null 2>&1 || curl -fsSL https://bun.sh/install | bash
-                                    export PATH="$HOME/.bun/bin:$PATH" && bun --version
-                                    echo "=== just ==="
-                                    command -v just >/dev/null 2>&1 || cargo install just --locked
-                                    just --version
-                                    echo "=== python ==="
-                                    (command -v python3.12 || command -v python3.13 || command -v python3) && python3 --version
-                                '''
-                            }
-                        }
-                        stage('Linux: Setup') {
-                            steps {
-                                sh 'just setup'
-                            }
-                        }
-                        stage('Linux: Build') {
-                            steps {
-                                sh 'just build'
-                            }
-                            post {
-                                success {
-                                    archiveArtifacts(
-                                        artifacts: 'tauri/src-tauri/target/release/bundle/**/*.deb, tauri/src-tauri/target/release/bundle/**/*.rpm, tauri/src-tauri/target/release/bundle/appimage/*.AppImage',
-                                        allowEmptyArchive: true, fingerprint: true)
-                                }
-                            }
+                    post {
+                        success {
+                            archiveArtifacts(
+                                artifacts: 'tauri/src-tauri/target/release/bundle/deb/*.deb, tauri/src-tauri/target/release/bundle/rpm/*.rpm',
+                                allowEmptyArchive: false, fingerprint: true)
                         }
                     }
                 }
@@ -82,103 +81,71 @@ pipeline {
                 // ─── macOS (arm64) ──────────────────────────────────────────
                 stage('macOS') {
                     agent { label 'macos' }
-                    environment {
-                        PATH = "/Users/jenkins/.cargo/bin:/Users/jenkins/.bun/bin:/Users/jenkins/.local/bin:/opt/homebrew/bin:/usr/local/bin:${env.PATH}"
+                    steps {
+                        sh '''
+                            set -eu
+                            export PATH="$HOME/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:$HOME/.bun/bin:$HOME/.local/bin:$PATH"
+
+                            echo "=== Toolchain ==="
+                            rustc --version && cargo --version
+                            # Prefer an already-installed bun (homebrew/global); only install
+                            # into the writable workspace if missing ($HOME/.bun may be unwritable).
+                            if ! command -v bun >/dev/null 2>&1; then
+                                export BUN_INSTALL="$WORKSPACE/.bun"
+                                curl -fsSL https://bun.sh/install | bash
+                                export PATH="$BUN_INSTALL/bin:$PATH"
+                            fi
+                            command -v just >/dev/null 2>&1 || cargo install just --locked
+                            command -v cmake >/dev/null 2>&1 || (pip3 install --user cmake 2>/dev/null || true)
+                            bun --version && just --version
+                            python3 --version
+
+                            echo "=== Setup (venv + deps + bun install) ==="
+                            just setup
+
+                            echo "=== Build sidecar ==="
+                            just build-server
+
+                            echo "=== Build Tauri bundles (dmg, app) ==="
+                            ( cd tauri && bun run tauri build --bundles dmg,app )
+                        '''
                     }
-                    stages {
-                        stage('macOS: Toolchain') {
-                            steps {
-                                sh '''
-                                    set -eu
-                                    echo "=== rust ===" && rustc --version && cargo --version
-                                    echo "=== bun ==="
-                                    command -v bun >/dev/null 2>&1 || curl -fsSL https://bun.sh/install | bash
-                                    export PATH="$HOME/.bun/bin:$PATH" && bun --version
-                                    echo "=== just ==="
-                                    command -v just >/dev/null 2>&1 || cargo install just --locked
-                                    just --version
-                                    echo "=== cmake (some native deps need it) ==="
-                                    command -v cmake >/dev/null 2>&1 || (pip3 install --user cmake 2>/dev/null || brew install cmake 2>&1 | tail -3) || true
-                                    echo "=== python ==="
-                                    (command -v python3.12 || command -v python3.13 || command -v python3) && python3 --version
-                                '''
-                            }
-                        }
-                        stage('macOS: Setup') {
-                            steps {
-                                sh 'just setup'
-                            }
-                        }
-                        stage('macOS: Build') {
-                            steps {
-                                sh 'just build'
-                            }
-                            post {
-                                success {
-                                    archiveArtifacts(
-                                        artifacts: 'tauri/src-tauri/target/release/bundle/**/*.dmg, tauri/src-tauri/target/release/bundle/macos/*.app.tar.gz',
-                                        allowEmptyArchive: true, fingerprint: true)
-                                }
-                            }
+                    post {
+                        success {
+                            archiveArtifacts(
+                                artifacts: 'tauri/src-tauri/target/release/bundle/dmg/*.dmg, tauri/src-tauri/target/release/bundle/macos/*.app.tar.gz',
+                                allowEmptyArchive: true, fingerprint: true)
                         }
                     }
                 }
 
                 // ─── Windows ────────────────────────────────────────────────
-                stage('Windows') {
-                    agent { label 'pockeo-windows' }
-                    stages {
-                        stage('Windows: Toolchain') {
-                            steps {
-                                powershell '''
-                                    $ErrorActionPreference = "Stop"
-                                    Write-Host "=== rust ==="; rustc --version; cargo --version
-                                    if (-not (Get-Command bun -ErrorAction SilentlyContinue)) {
-                                        Write-Host "Installing bun..."; irm bun.sh/install.ps1 | iex
-                                        $env:Path = "$env:USERPROFILE\\.bun\\bin;$env:Path"
-                                    }
-                                    bun --version
-                                    if (-not (Get-Command just -ErrorAction SilentlyContinue)) {
-                                        Write-Host "Installing just..."; cargo install just --locked
-                                    }
-                                    just --version
-                                    Write-Host "=== python ==="; (Get-Command python).Source; python --version
-                                '''
-                            }
-                        }
-                        stage('Windows: Setup') {
-                            steps {
-                                powershell '''
-                                    $ErrorActionPreference = "Stop"
-                                    $env:Path = "$env:USERPROFILE\\.bun\\bin;$env:USERPROFILE\\.cargo\\bin;$env:Path"
-                                    just setup
-                                '''
-                            }
-                        }
-                        stage('Windows: Build') {
-                            steps {
-                                powershell '''
-                                    $ErrorActionPreference = "Stop"
-                                    $env:Path = "$env:USERPROFILE\\.bun\\bin;$env:USERPROFILE\\.cargo\\bin;$env:Path"
-                                    just build
-                                '''
-                            }
-                            post {
-                                success {
-                                    archiveArtifacts(
-                                        artifacts: 'tauri/src-tauri/target/release/bundle/**/*.msi, tauri/src-tauri/target/release/bundle/**/*.exe',
-                                        allowEmptyArchive: true, fingerprint: true)
-                                }
-                            }
-                        }
-                    }
-                }
+                // DISABLED: the pockeo-windows agents can't clone Tapnetix/voicebox
+                // over SSH (deploy key / known_hosts not provisioned). Once SSH is
+                // set up on those agents (or the job source is switched to HTTPS),
+                // uncomment this stage — `just build` has working [windows] recipes.
+                //
+                // stage('Windows') {
+                //     agent { label 'pockeo-windows' }
+                //     steps {
+                //         powershell '''
+                //             $ErrorActionPreference = "Stop"
+                //             $env:Path = "$env:USERPROFILE\\.cargo\\bin;$env:USERPROFILE\\.bun\\bin;$env:Path"
+                //             if (-not (Get-Command bun  -ErrorAction SilentlyContinue)) { irm bun.sh/install.ps1 | iex; $env:Path = "$env:USERPROFILE\\.bun\\bin;$env:Path" }
+                //             if (-not (Get-Command just -ErrorAction SilentlyContinue)) { cargo install just --locked }
+                //             just setup
+                //             just build-server
+                //             Set-Location tauri; bun run tauri build --bundles msi,nsis
+                //         '''
+                //     }
+                //     post { success { archiveArtifacts artifacts: 'tauri/src-tauri/target/release/bundle/**/*.msi, tauri/src-tauri/target/release/bundle/**/*.exe', allowEmptyArchive: true, fingerprint: true } }
+                // }
             }
         }
     }
 
     post {
-        success { echo 'Voicebox desktop bundles built on Linux, macOS, and Windows.' }
+        success { echo 'Voicebox desktop bundles built on Linux + macOS.' }
         failure { echo 'Build failed — see the per-platform stage logs above.' }
     }
 }
