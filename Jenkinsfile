@@ -52,7 +52,7 @@ pipeline {
                             just setup
                             just build-server
                             ( cd tauri
-                              bun run tauri signer generate --ci -w ./.tauri-ci.key
+                              bun run tauri signer generate --ci --force -w ./.tauri-ci.key
                               export TAURI_SIGNING_PRIVATE_KEY="$(cat ./.tauri-ci.key)"
                               export TAURI_SIGNING_PRIVATE_KEY_PASSWORD=""
                               bun run tauri build --bundles deb < /dev/null )
@@ -89,7 +89,7 @@ pipeline {
                             bun install
                             ./scripts/build-server.sh
                             ( cd tauri
-                              bun run tauri signer generate --ci -w ./.tauri-ci.key
+                              bun run tauri signer generate --ci --force -w ./.tauri-ci.key
                               export TAURI_SIGNING_PRIVATE_KEY="$(cat ./.tauri-ci.key)"
                               export TAURI_SIGNING_PRIVATE_KEY_PASSWORD=""
                               bun run tauri build --bundles dmg < /dev/null )
@@ -132,7 +132,7 @@ pipeline {
                             Copy-Item backend\\dist\\voicebox-mcp.exe "tauri\\src-tauri\\binaries\\voicebox-mcp-$triple.exe" -Force
 
                             Set-Location tauri
-                            bun run tauri signer generate --ci -w .tauri-ci.key
+                            bun run tauri signer generate --ci --force -w .tauri-ci.key
                             $env:TAURI_SIGNING_PRIVATE_KEY = (Get-Content .tauri-ci.key -Raw)
                             $env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD = ""
                             bun run tauri build --bundles nsis
