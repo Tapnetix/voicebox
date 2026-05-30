@@ -14,6 +14,8 @@
 //   Linux  `pockeo-linux`   — /home/jenkins toolchains; `just` + python3 present.
 //   macOS  `macos` (mbook)  — runs as jenkins; force HOME=/Users/jenkins; Python
 //                              3.12 via uv (brew unwritable); bun in workspace home.
+//                              Installs MLX (Apple-Silicon accel) + ad-hoc signs the
+//                              .dmg so Gatekeeper shows the normal trust prompt.
 //   Windows `pockeo-windows`— cmd/`bat` (the `powershell` step isn't on PATH there);
 //                              uv + bun pre-provisioned; Python 3.12 via uv.
 
@@ -88,10 +90,50 @@ pipeline {
                             uv venv --python 3.12 --seed backend/venv
                             backend/venv/bin/python -m pip install --upgrade pip
                             backend/venv/bin/pip install -r backend/requirements.txt
+                            # Apple Silicon acceleration: without MLX the sidecar falls back to the
+                            # generic PyTorch path (LLM on MPS, TTS on CPU) and runs slowly even on
+                            # M-series. build_binary.py already bundles MLX on arm64 (--collect-all
+                            # mlx/mlx_audio/mlx_lm) — it just needs the packages present in the venv.
+                            # mlx-lm / mlx-audio declare transformers>=5.x (conflicts with our 4.57.x
+                            # cap) so install them --no-deps; mirrors .github/workflows/release.yml.
+                            backend/venv/bin/pip install -r backend/requirements-mlx.txt
+                            backend/venv/bin/pip install --no-deps mlx-lm==0.31.1
+                            backend/venv/bin/pip install --no-deps mlx-audio==0.4.1
                             bun install
                             ./scripts/build-server.sh
                             backend/venv/bin/python scripts/ci-disable-updater.py
+
+                            # Ad-hoc code signing ("-"). The app was previously shipped fully
+                            # unsigned, so Gatekeeper flagged it as "damaged"/unverifiable instead of
+                            # the normal "unidentified developer → right-click Open" flow. Tauri reads
+                            # APPLE_SIGNING_IDENTITY and signs the .app at build time so the copy
+                            # inside the .dmg is signed too.
+                            export APPLE_SIGNING_IDENTITY="-"
                             ( cd tauri && bun run tauri build --bundles dmg < /dev/null )
+
+                            # Repackage the .dmg around a freshly ad-hoc-signed .app. This does not
+                            # rely on Tauri honouring "-": we mount the built dmg, deep-sign the .app
+                            # in place of an unsigned one, and rebuild the dmg from the same contents
+                            # (preserving the drag-to-Applications layout + background). Ad-hoc is
+                            # idempotent, so if Tauri already signed, this just re-affirms it.
+                            # (Set a real Developer ID + APPLE_ID/APPLE_PASSWORD/APPLE_TEAM_ID later
+                            # to notarize for a fully trusted, no-warning install.)
+                            DMG=$(find tauri/src-tauri/target/release/bundle/dmg -name "*.dmg" | head -1 || true)
+                            if [ -n "$DMG" ]; then
+                                MNT=$(mktemp -d); STAGE=$(mktemp -d)
+                                hdiutil attach "$DMG" -mountpoint "$MNT" -nobrowse -quiet
+                                cp -R "$MNT/." "$STAGE/"
+                                hdiutil detach "$MNT" -quiet
+                                APP=$(find "$STAGE" -maxdepth 1 -name "*.app" -type d | head -1)
+                                VOL=$(/usr/bin/basename "$APP" .app)
+                                codesign --force --deep --sign - "$APP"
+                                codesign --verify --deep --strict "$APP" && echo "Signature: OK" || echo "Signature: INVALID"
+                                codesign -dvv "$APP" 2>&1 | grep -E "Signature|Identifier|Authority" || true
+                                rm -f "$DMG"
+                                hdiutil create -volname "$VOL" -srcfolder "$STAGE" -ov -format UDZO "$DMG"
+                                rm -rf "$STAGE"
+                                echo "=== Repackaged signed dmg: $(du -h "$DMG" | cut -f1) ==="
+                            fi
                         '''
                     }
                     post {
