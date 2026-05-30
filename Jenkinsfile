@@ -1,30 +1,31 @@
 // Voicebox cross-platform desktop build.
 //
 // Builds the Tauri desktop app + bundled Python server sidecar and archives the
-// platform installers. Drives the repo's own `just` recipes so CI stays in
-// lockstep with local development:
+// platform installers.
 //
-//   just setup        → python venv + `pip install -r backend/requirements.txt`
-//                       (incl. the git-only TTS engines — they resolve fine on
-//                       real agents) + `bun install`
-//   just build-server → scripts/build-server.sh (PyInstaller → voicebox-server /
-//                       voicebox-mcp sidecars, copied into tauri/src-tauri/binaries)
-//   tauri build --bundles … → per-platform installers
+//   venv + pip install -r backend/requirements.txt  (incl. the git-only TTS
+//        engines — they resolve fine on real agents)
+//   bun install
+//   scripts/build-server.sh  → PyInstaller voicebox-server / voicebox-mcp
+//        sidecars (copied into tauri/src-tauri/binaries)
+//   tauri build --bundles … --config src-tauri/tauri.ci.conf.json
+//        (the CI config disables updater-artifact signing, which otherwise
+//         blocks on an interactive password prompt in headless CI; AppImage
+//         is skipped on Linux because its bundler stalls fetching linuxdeploy)
 //
-// Each platform runs as a single shell so PATH bootstrapping persists across
-// the toolchain/setup/build steps.
-//
-// Agents (labels): Linux `pockeo-linux`, macOS `macos`. Windows (`pockeo-windows`)
-// is wired but disabled — those agents can't yet clone over SSH (the
-// github-pockeo-ssh deploy key + known_hosts aren't provisioned there); enable
-// the stage once that's set up.
+// Agent toolchains differ, so each platform sets its own PATH:
+//   Linux  `pockeo-linux`   — /home/jenkins/.cargo/bin; `just` available
+//   macOS  `macos` (mbook)  — runs as jjb; toolchains under /Users/jenkins
+//                              (readable, not writable) → install bun into the
+//                              workspace and call build steps directly (no just)
+//   Windows `pockeo-windows`— runs as pockeo; C:\Users\pockeo\.cargo\bin etc.
 
 pipeline {
     agent none
 
     options {
         timestamps()
-        timeout(time: 180, unit: 'MINUTES')
+        timeout(time: 150, unit: 'MINUTES')
         buildDiscarder(logRotator(numToKeepStr: '15'))
         disableConcurrentBuilds()
     }
@@ -40,33 +41,22 @@ pipeline {
             failFast false
             parallel {
 
-                // ─── Linux ──────────────────────────────────────────────────
-                // Bundle deb + rpm only. AppImage is skipped: tauri's AppImage
-                // bundler downloads linuxdeploy tooling and stalls on these
-                // agents — add it back once that tooling is cached locally.
+                // ─── Linux (deb + rpm) ──────────────────────────────────────
                 stage('Linux') {
                     agent { label 'pockeo-linux' }
                     steps {
                         sh '''
                             set -eu
                             export PATH="$HOME/.cargo/bin:$HOME/.bun/bin:$HOME/.local/bin:$PATH"
-
-                            echo "=== Toolchain ==="
-                            rustc --version && cargo --version
                             command -v bun  >/dev/null 2>&1 || curl -fsSL https://bun.sh/install | bash
                             export PATH="$HOME/.bun/bin:$PATH"
                             command -v just >/dev/null 2>&1 || cargo install just --locked
-                            bun --version && just --version
-                            python3 --version
+                            rustc --version; bun --version; just --version; python3 --version
 
-                            echo "=== Setup (venv + deps + bun install) ==="
                             just setup
-
-                            echo "=== Build sidecar ==="
                             just build-server
-
-                            echo "=== Build Tauri bundles (deb, rpm) ==="
-                            ( cd tauri && bun run tauri build --bundles deb,rpm )
+                            ( cd tauri && bun run tauri build --bundles deb,rpm \
+                                  --config src-tauri/tauri.ci.conf.json )
                         '''
                     }
                     post {
@@ -75,39 +65,41 @@ pipeline {
                                 artifacts: 'tauri/src-tauri/target/release/bundle/deb/*.deb, tauri/src-tauri/target/release/bundle/rpm/*.rpm',
                                 allowEmptyArchive: false, fingerprint: true)
                         }
+                        cleanup { sh 'rm -rf tauri/src-tauri/target/release/bundle || true' }
                     }
                 }
 
-                // ─── macOS (arm64) ──────────────────────────────────────────
+                // ─── macOS (dmg + app) ──────────────────────────────────────
                 stage('macOS') {
                     agent { label 'macos' }
                     steps {
                         sh '''
                             set -eu
-                            export PATH="$HOME/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:$HOME/.bun/bin:$HOME/.local/bin:$PATH"
+                            # mbook runs as jjb; rust/node toolchains live under
+                            # /Users/jenkins (readable). bun isn't installed and
+                            # ~/.cargo / ~/.bun aren't writable, so install bun into
+                            # the (writable) workspace and drive the build directly.
+                            export PATH="/Users/jenkins/.cargo/bin:/Users/jenkins/.nvm/versions/node/v24.14.1/bin:/Users/jenkins/.nvm/versions/node/v24.14.0/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
+                            export BUN_INSTALL="$WORKSPACE/.bun"
+                            export PATH="$BUN_INSTALL/bin:$PATH"
+                            command -v bun >/dev/null 2>&1 || curl -fsSL https://bun.sh/install | bash
+                            rustc --version; bun --version; (command -v python3.12 || command -v python3); python3 --version
 
-                            echo "=== Toolchain ==="
-                            rustc --version && cargo --version
-                            # Prefer an already-installed bun (homebrew/global); only install
-                            # into the writable workspace if missing ($HOME/.bun may be unwritable).
-                            if ! command -v bun >/dev/null 2>&1; then
-                                export BUN_INSTALL="$WORKSPACE/.bun"
-                                curl -fsSL https://bun.sh/install | bash
-                                export PATH="$BUN_INSTALL/bin:$PATH"
-                            fi
-                            command -v just >/dev/null 2>&1 || cargo install just --locked
-                            command -v cmake >/dev/null 2>&1 || (pip3 install --user cmake 2>/dev/null || true)
-                            bun --version && just --version
-                            python3 --version
+                            echo "=== venv + python deps ==="
+                            PY="$(command -v python3.12 || command -v python3.13 || command -v python3)"
+                            [ -d backend/venv ] || "$PY" -m venv backend/venv
+                            backend/venv/bin/python -m pip install --upgrade pip
+                            backend/venv/bin/pip install -r backend/requirements.txt
 
-                            echo "=== Setup (venv + deps + bun install) ==="
-                            just setup
+                            echo "=== JS deps ==="
+                            bun install
 
-                            echo "=== Build sidecar ==="
-                            just build-server
+                            echo "=== sidecar (PyInstaller) ==="
+                            ./scripts/build-server.sh
 
-                            echo "=== Build Tauri bundles (dmg, app) ==="
-                            ( cd tauri && bun run tauri build --bundles dmg,app )
+                            echo "=== Tauri bundles (dmg, app) ==="
+                            ( cd tauri && bun run tauri build --bundles dmg,app \
+                                  --config src-tauri/tauri.ci.conf.json )
                         '''
                     }
                     post {
@@ -116,36 +108,70 @@ pipeline {
                                 artifacts: 'tauri/src-tauri/target/release/bundle/dmg/*.dmg, tauri/src-tauri/target/release/bundle/macos/*.app.tar.gz',
                                 allowEmptyArchive: true, fingerprint: true)
                         }
+                        cleanup { sh 'rm -rf tauri/src-tauri/target/release/bundle || true' }
                     }
                 }
 
-                // ─── Windows ────────────────────────────────────────────────
-                // DISABLED: the pockeo-windows agents can't clone Tapnetix/voicebox
-                // over SSH (deploy key / known_hosts not provisioned). Once SSH is
-                // set up on those agents (or the job source is switched to HTTPS),
-                // uncomment this stage — `just build` has working [windows] recipes.
-                //
-                // stage('Windows') {
-                //     agent { label 'pockeo-windows' }
-                //     steps {
-                //         powershell '''
-                //             $ErrorActionPreference = "Stop"
-                //             $env:Path = "$env:USERPROFILE\\.cargo\\bin;$env:USERPROFILE\\.bun\\bin;$env:Path"
-                //             if (-not (Get-Command bun  -ErrorAction SilentlyContinue)) { irm bun.sh/install.ps1 | iex; $env:Path = "$env:USERPROFILE\\.bun\\bin;$env:Path" }
-                //             if (-not (Get-Command just -ErrorAction SilentlyContinue)) { cargo install just --locked }
-                //             just setup
-                //             just build-server
-                //             Set-Location tauri; bun run tauri build --bundles msi,nsis
-                //         '''
-                //     }
-                //     post { success { archiveArtifacts artifacts: 'tauri/src-tauri/target/release/bundle/**/*.msi, tauri/src-tauri/target/release/bundle/**/*.exe', allowEmptyArchive: true, fingerprint: true } }
-                // }
+                // ─── Windows (msi + nsis) ───────────────────────────────────
+                // Uses PockeoR's proven Windows pattern (explicit checkout + the
+                // pockeo agent toolchain paths). bun isn't preinstalled → install
+                // it into the user profile (writable). NOTE: needs Python on the
+                // agent for the PyInstaller sidecar — if absent, that's the next
+                // thing to provision (PockeoR is pure Rust/Node).
+                stage('Windows') {
+                    agent { label 'pockeo-windows' }
+                    options { retry(count: 2, conditions: [agent(), nonresumable()]) }
+                    steps {
+                        checkout scm
+                        powershell '''
+                            $ErrorActionPreference = "Stop"
+                            $env:Path = "$env:USERPROFILE\\.cargo\\bin;C:\\Program Files\\Git\\bin;C:\\Program Files\\Git\\usr\\bin;C:\\Program Files\\nodejs;C:\\Strawberry\\perl\\bin;C:\\LLVM\\bin;$env:Path"
+                            if (-not (Get-Command bun -ErrorAction SilentlyContinue)) {
+                                Write-Host "Installing bun..."; irm bun.sh/install.ps1 | iex
+                            }
+                            $env:Path = "$env:USERPROFILE\\.bun\\bin;$env:Path"
+                            rustc --version; bun --version
+                            $py = (Get-Command python -ErrorAction SilentlyContinue); if ($py) { python --version } else { Write-Host "WARNING: python not found on agent" }
+
+                            Write-Host "=== venv + python deps ==="
+                            if (-not (Test-Path backend\\venv)) { python -m venv backend\\venv }
+                            backend\\venv\\Scripts\\python.exe -m pip install --upgrade pip
+                            backend\\venv\\Scripts\\pip.exe install -r backend\\requirements.txt
+
+                            Write-Host "=== JS deps ==="
+                            bun install
+
+                            Write-Host "=== sidecar (PyInstaller) ==="
+                            $env:PATH = "$PWD\\backend\\venv\\Scripts;$env:Path"
+                            python backend\\build_binary.py
+                            $triple = (rustc --print host-tuple)
+                            New-Item -ItemType Directory -Path tauri\\src-tauri\\binaries -Force | Out-Null
+                            Copy-Item backend\\dist\\voicebox-server.exe "tauri\\src-tauri\\binaries\\voicebox-server-$triple.exe" -Force
+                            python backend\\build_binary.py --shim
+                            Copy-Item backend\\dist\\voicebox-mcp.exe "tauri\\src-tauri\\binaries\\voicebox-mcp-$triple.exe" -Force
+
+                            Write-Host "=== Tauri bundles (msi, nsis) ==="
+                            Set-Location tauri
+                            bun run tauri build --bundles msi,nsis --config src-tauri/tauri.ci.conf.json
+                        '''
+                    }
+                    post {
+                        success {
+                            archiveArtifacts(
+                                artifacts: 'tauri/src-tauri/target/release/bundle/msi/*.msi, tauri/src-tauri/target/release/bundle/nsis/*.exe',
+                                allowEmptyArchive: true, fingerprint: true)
+                        }
+                        cleanup {
+                            powershell 'if (Test-Path tauri\\src-tauri\\target\\release\\bundle) { Remove-Item -Recurse -Force tauri\\src-tauri\\target\\release\\bundle }'
+                        }
+                    }
+                }
             }
         }
     }
 
     post {
-        success { echo 'Voicebox desktop bundles built on Linux + macOS.' }
+        success { echo 'Voicebox desktop bundles built.' }
         failure { echo 'Build failed — see the per-platform stage logs above.' }
     }
 }
