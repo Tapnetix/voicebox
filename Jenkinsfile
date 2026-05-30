@@ -2,19 +2,20 @@
 //
 // Builds the Tauri desktop app + bundled Python server sidecar and archives the
 // platform installers (Linux .deb, macOS .dmg, Windows NSIS .exe). The bundles
-// are large (~2.7 GB — the PyInstaller sidecar bundles torch + the TTS engines),
-// so we build ONE installer type per platform to keep compression time sane
-// (rpm's xz on a multi-GB payload takes far too long; deb is the Linux target).
+// are large (~2.7 GB — the PyInstaller sidecar packs torch + the TTS engines),
+// so one installer type per platform keeps compression time sane.
 //
-// Per-platform notes:
-//   Linux  `pockeo-linux`   — /home/jenkins toolchains; `just` available.
-//   macOS  `macos` (mbook)  — agent runs as jenkins but $HOME defaults to
-//                              /Users/jjb (mismatch) → force HOME=/Users/jenkins;
-//                              brew is unwritable, so Python 3.12 comes from uv.
-//   Windows `pockeo-windows`— Python 3.12 via uv; bun installed into the profile.
-// Python 3.12 is required (kokoro>=0.9.4 needs >=3.10) — uv provides it on
-// mac/Windows without brew/sudo. A throwaway no-password tauri signing key makes
-// updater-artifact signing non-interactive (the conf pins an updater pubkey).
+// Updater artifacts are disabled for CI (scripts/ci-disable-updater.py): the
+// conf pins an updater pubkey + createUpdaterArtifacts, which otherwise makes
+// tauri block on a signing-key password prompt and error when the bundle target
+// isn't updater-enabled (e.g. .deb).
+//
+// Agent toolchains:
+//   Linux  `pockeo-linux`   — /home/jenkins toolchains; `just` + python3 present.
+//   macOS  `macos` (mbook)  — runs as jenkins; force HOME=/Users/jenkins; Python
+//                              3.12 via uv (brew unwritable); bun in workspace home.
+//   Windows `pockeo-windows`— cmd/`bat` (the `powershell` step isn't on PATH there);
+//                              uv + bun pre-provisioned; Python 3.12 via uv.
 
 pipeline {
     agent none
@@ -51,11 +52,8 @@ pipeline {
 
                             just setup
                             just build-server
-                            ( cd tauri
-                              bun run tauri signer generate --ci --force -w ./.tauri-ci.key
-                              export TAURI_SIGNING_PRIVATE_KEY="$(cat ./.tauri-ci.key)"
-                              export TAURI_SIGNING_PRIVATE_KEY_PASSWORD=""
-                              bun run tauri build --bundles deb < /dev/null )
+                            python3 scripts/ci-disable-updater.py
+                            ( cd tauri && bun run tauri build --bundles deb < /dev/null )
                         '''
                     }
                     post {
@@ -80,19 +78,14 @@ pipeline {
                             export PATH="$BUN_INSTALL/bin:$PATH"
                             uv --version; rustc --version; bun --version
 
-                            echo "=== venv (python 3.12 via uv) ==="
                             rm -rf backend/venv
                             uv venv --python 3.12 --seed backend/venv
                             backend/venv/bin/python -m pip install --upgrade pip
                             backend/venv/bin/pip install -r backend/requirements.txt
-
                             bun install
                             ./scripts/build-server.sh
-                            ( cd tauri
-                              bun run tauri signer generate --ci --force -w ./.tauri-ci.key
-                              export TAURI_SIGNING_PRIVATE_KEY="$(cat ./.tauri-ci.key)"
-                              export TAURI_SIGNING_PRIVATE_KEY_PASSWORD=""
-                              bun run tauri build --bundles dmg < /dev/null )
+                            backend/venv/bin/python scripts/ci-disable-updater.py
+                            ( cd tauri && bun run tauri build --bundles dmg < /dev/null )
                         '''
                     }
                     post {
@@ -105,37 +98,37 @@ pipeline {
                 }
 
                 // ─── Windows (NSIS .exe) ────────────────────────────────────
+                // cmd/bat (the Jenkins `powershell` step's launcher can't find
+                // powershell.exe on these agents — PockeoR uses bat too). uv + bun
+                // are pre-provisioned in C:\Users\pockeo.
                 stage('Windows') {
                     agent { label 'pockeo-windows' }
                     options { retry(count: 2, conditions: [agent(), nonresumable()]) }
                     steps {
                         checkout scm
-                        powershell '''
-                            $ErrorActionPreference = "Stop"
-                            $env:Path = "$env:USERPROFILE\\.local\\bin;$env:USERPROFILE\\.cargo\\bin;$env:USERPROFILE\\.bun\\bin;C:\\Program Files\\Git\\bin;C:\\Program Files\\Git\\usr\\bin;C:\\Program Files\\nodejs;C:\\Strawberry\\perl\\bin;C:\\LLVM\\bin;$env:Path"
-                            if (-not (Get-Command bun -ErrorAction SilentlyContinue)) { irm bun.sh/install.ps1 | iex; $env:Path = "$env:USERPROFILE\\.bun\\bin;$env:Path" }
-                            uv --version; bun --version; rustc --version
+                        bat '''
+                            set "PATH=%USERPROFILE%\\.local\\bin;%USERPROFILE%\\.cargo\\bin;%USERPROFILE%\\.bun\\bin;C:\\Program Files\\Git\\bin;C:\\Program Files\\Git\\usr\\bin;C:\\Program Files\\nodejs;C:\\Strawberry\\perl\\bin;C:\\LLVM\\bin;%PATH%"
+                            uv --version || exit /b 1
+                            bun --version || exit /b 1
+                            rustc --version || exit /b 1
 
-                            Write-Host "=== venv (python 3.12 via uv) ==="
-                            if (Test-Path backend\\venv) { Remove-Item -Recurse -Force backend\\venv }
-                            uv venv --python 3.12 --seed backend\\venv
-                            backend\\venv\\Scripts\\python.exe -m pip install --upgrade pip
-                            backend\\venv\\Scripts\\pip.exe install -r backend\\requirements.txt
+                            if exist backend\\venv rmdir /S /Q backend\\venv
+                            uv venv --python 3.12 --seed backend\\venv || exit /b 1
+                            backend\\venv\\Scripts\\python.exe -m pip install --upgrade pip || exit /b 1
+                            backend\\venv\\Scripts\\pip.exe install -r backend\\requirements.txt || exit /b 1
+                            call bun install || exit /b 1
+                            backend\\venv\\Scripts\\python.exe scripts\\ci-disable-updater.py || exit /b 1
 
-                            bun install
-                            $env:PATH = "$PWD\\backend\\venv\\Scripts;$env:Path"
-                            python backend\\build_binary.py
-                            $triple = (rustc --print host-tuple)
-                            New-Item -ItemType Directory -Path tauri\\src-tauri\\binaries -Force | Out-Null
-                            Copy-Item backend\\dist\\voicebox-server.exe "tauri\\src-tauri\\binaries\\voicebox-server-$triple.exe" -Force
-                            python backend\\build_binary.py --shim
-                            Copy-Item backend\\dist\\voicebox-mcp.exe "tauri\\src-tauri\\binaries\\voicebox-mcp-$triple.exe" -Force
+                            set "PATH=%CD%\\backend\\venv\\Scripts;%PATH%"
+                            python backend\\build_binary.py || exit /b 1
+                            for /f "delims=" %%i in ('rustc --print host-tuple') do set "TRIPLE=%%i"
+                            if not exist tauri\\src-tauri\\binaries mkdir tauri\\src-tauri\\binaries
+                            copy /Y backend\\dist\\voicebox-server.exe "tauri\\src-tauri\\binaries\\voicebox-server-%TRIPLE%.exe" || exit /b 1
+                            python backend\\build_binary.py --shim || exit /b 1
+                            copy /Y backend\\dist\\voicebox-mcp.exe "tauri\\src-tauri\\binaries\\voicebox-mcp-%TRIPLE%.exe" || exit /b 1
 
-                            Set-Location tauri
-                            bun run tauri signer generate --ci --force -w .tauri-ci.key
-                            $env:TAURI_SIGNING_PRIVATE_KEY = (Get-Content .tauri-ci.key -Raw)
-                            $env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD = ""
-                            bun run tauri build --bundles nsis
+                            cd tauri || exit /b 1
+                            call bun run tauri build --bundles nsis || exit /b 1
                         '''
                     }
                     post {
@@ -144,7 +137,7 @@ pipeline {
                                 allowEmptyArchive: true, fingerprint: true
                         }
                         cleanup {
-                            powershell 'if (Test-Path tauri\\src-tauri\\target\\release\\bundle) { Remove-Item -Recurse -Force tauri\\src-tauri\\target\\release\\bundle }'
+                            bat 'if exist tauri\\src-tauri\\target\\release\\bundle rmdir /S /Q tauri\\src-tauri\\target\\release\\bundle'
                         }
                     }
                 }
