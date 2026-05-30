@@ -55,8 +55,12 @@ pipeline {
 
                             just setup
                             just build-server
+                            # Inline --config disables updater-artifact signing (the
+                            # file-path form didn't apply); stdin from /dev/null turns
+                            # any stray interactive prompt into a fast EOF failure
+                            # instead of a silent hang.
                             ( cd tauri && bun run tauri build --bundles deb,rpm \
-                                  --config src-tauri/tauri.ci.conf.json )
+                                  --config '{"bundle":{"createUpdaterArtifacts":false}}' < /dev/null )
                         '''
                     }
                     post {
@@ -68,6 +72,17 @@ pipeline {
                         cleanup { sh 'rm -rf tauri/src-tauri/target/release/bundle || true' }
                     }
                 }
+
+                /* TEMPORARILY DISABLED — pending agent provisioning:
+                 *   macOS (mbook): system python3 is 3.9, but kokoro>=0.9.4 needs
+                 *     Python >=3.10. Install python@3.12 on mbook (brew) and the
+                 *     stage below works as-is.
+                 *   Windows (pockeo-windows): the fresh-workspace `checkout scm`
+                 *     fails SSH host-key verification ("known_hosts does not
+                 *     exist") even though PockeoR builds there — seed github.com
+                 *     into the agent's known_hosts (ssh-keyscan) or set the global
+                 *     Git Host Key Verification to "Accept first connection".
+                 * Re-enable by removing this comment wrapper once provisioned.
 
                 // ─── macOS (dmg + app) ──────────────────────────────────────
                 stage('macOS') {
@@ -166,6 +181,7 @@ pipeline {
                         }
                     }
                 }
+                */
             }
         }
     }
