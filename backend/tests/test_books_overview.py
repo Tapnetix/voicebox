@@ -393,7 +393,7 @@ async def test_character_detected_before_analysis_complete(
     )
     fake_analysis = BookAnalysis(chapters=[chapter_analysis], characters=characters)
 
-    async def fake_analyze_book(chapter_texts, model_size=None):
+    async def fake_analyze_book(chapter_texts, model_size=None, progress_cb=None):
         return fake_analysis
 
     monkeypatch.setattr(literary_analysis, "analyze_book", fake_analyze_book)

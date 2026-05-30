@@ -235,7 +235,7 @@ async def test_materialization_creates_rows_and_emits_events(
 
     fake_analysis = _make_fake_book_analysis(["Holston", "Allison"])
 
-    async def fake_analyze_book(chapters, model_size=None):
+    async def fake_analyze_book(chapters, model_size=None, progress_cb=None):
         return fake_analysis
 
     monkeypatch.setattr(literary_analysis, "analyze_book", fake_analyze_book)
@@ -282,7 +282,7 @@ async def test_materialization_emits_analysis_progress_events(
 
     fake_analysis = _make_fake_book_analysis(["Holston"])
 
-    async def fake_analyze_book(chapters, model_size=None):
+    async def fake_analyze_book(chapters, model_size=None, progress_cb=None):
         return fake_analysis
 
     monkeypatch.setattr(literary_analysis, "analyze_book", fake_analyze_book)
@@ -462,7 +462,7 @@ async def test_integration_major_gets_designed_minor_gets_preset(
         characters=[major_char, minor_char],
     )
 
-    async def fake_analyze_book(chapters, model_size=None):
+    async def fake_analyze_book(chapters, model_size=None, progress_cb=None):
         return fake_analysis
 
     monkeypatch.setattr(literary_analysis, "analyze_book", fake_analyze_book)
@@ -526,7 +526,7 @@ async def test_narrator_voice_id_applied_before_casting(
 
     fake_analysis = _make_fake_book_analysis(["Holston"])
 
-    async def fake_analyze_book(chapters, model_size=None):
+    async def fake_analyze_book(chapters, model_size=None, progress_cb=None):
         return fake_analysis
 
     monkeypatch.setattr(literary_analysis, "analyze_book", fake_analyze_book)
@@ -590,7 +590,7 @@ async def test_materialization_recounts_dialogue_from_segments(
 
     fake_analysis = _make_fake_book_analysis(["Holston"])
 
-    async def fake_analyze_book(chapters, model_size=None):
+    async def fake_analyze_book(chapters, model_size=None, progress_cb=None):
         return fake_analysis
 
     monkeypatch.setattr(literary_analysis, "analyze_book", fake_analyze_book)

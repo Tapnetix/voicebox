@@ -188,6 +188,67 @@ async def test_analyze_book_aggregates_chapters(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_analyze_book_reports_progress(monkeypatch):
+    """analyze_book must drive progress_cb through detection and enrichment.
+
+    Regression guard for the "appears hung" UX: the long LLM passes have to
+    emit monotonic, in-range progress with human-readable messages.
+    """
+    canned = {
+        "speakers": [
+            {
+                "speaker": "Bob",
+                "text": "Let's go",
+                "emotion": "eager",
+                "intensity": 0.8,
+                "type": "dialogue",
+            }
+        ]
+    }
+
+    async def fake_generate(prompt, schema, **kwargs):
+        return schema.model_validate(canned)
+
+    monkeypatch.setattr(la, "generate_structured", fake_generate)
+
+    events: list[tuple[float, str]] = []
+    chapters = ["Chapter one text.", "Chapter two text.", "Chapter three text."]
+    await la.analyze_book(
+        chapters,
+        model_size="1.7B",
+        progress_cb=lambda frac, msg: events.append((frac, msg)),
+    )
+
+    assert events, "progress_cb was never called"
+    fractions = [f for f, _ in events]
+    # In range, monotonic non-decreasing, and reaches completion.
+    assert all(0.0 <= f <= 1.0 for f in fractions)
+    assert fractions == sorted(fractions)
+    assert fractions[-1] == 1.0
+    # Per-chapter detection messages are surfaced.
+    assert any("chapter 1 of 3" in msg.lower() for _, msg in events)
+    # Enrichment phase reports per-character work past the detect band.
+    assert any(f > la._DETECT_SPAN for f in fractions)
+
+
+@pytest.mark.asyncio
+async def test_analyze_book_progress_callback_errors_are_swallowed(monkeypatch):
+    """A throwing progress_cb must never abort the analysis."""
+    canned = {"speakers": []}
+
+    async def fake_generate(prompt, schema, **kwargs):
+        return schema.model_validate(canned)
+
+    monkeypatch.setattr(la, "generate_structured", fake_generate)
+
+    def boom(_frac, _msg):
+        raise RuntimeError("ui exploded")
+
+    result = await la.analyze_book(["Chapter."], model_size="1.7B", progress_cb=boom)
+    assert hasattr(result, "chapters")
+
+
+@pytest.mark.asyncio
 async def test_enrich_profiles_degrades_gracefully(monkeypatch):
     """enrich_profiles must not crash even if LLM fails."""
     async def boom(*a, **k):

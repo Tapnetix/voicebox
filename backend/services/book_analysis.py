@@ -16,6 +16,7 @@ GPU coordination strategy (documented per task spec):
 from __future__ import annotations
 
 import logging
+import time
 import uuid
 from typing import TYPE_CHECKING
 
@@ -30,6 +31,18 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+
+
+def _format_eta(seconds: float) -> str:
+    """Human-readable time-remaining, e.g. '45s', '3m 20s', '1h 05m'."""
+    secs = max(1, int(seconds))
+    if secs < 60:
+        return f"{secs}s"
+    minutes, secs = divmod(secs, 60)
+    if minutes < 60:
+        return f"{minutes}m {secs:02d}s" if secs else f"{minutes}m"
+    hours, minutes = divmod(minutes, 60)
+    return f"{hours}h {minutes:02d}m"
 
 
 def _unload_tts_for_analysis() -> None:
@@ -101,7 +114,16 @@ async def run_analysis_task(
 
     try:
         # ── Stage: detect ─────────────────────────────────────────────────
-        _pub({"type": "analysis_progress", "stage": "detect", "progress": 0})
+        # The first LLM call lazily loads a multi-GB model onto the GPU/CPU,
+        # which is silent and CPU-heavy — say so, so it doesn't look hung.
+        _pub(
+            {
+                "type": "analysis_progress",
+                "stage": "detect",
+                "progress": 0,
+                "message": "Loading the language model into memory (first run can take a minute)…",
+            }
+        )
 
         # GPU coordination: unload TTS before the LLM analysis pass.
         # See module docstring for rationale.
@@ -117,11 +139,33 @@ async def run_analysis_task(
         chapter_texts = [ch.raw_text for ch in chapters]
         chapter_ids = [ch.id for ch in chapters]
 
+        # Forward analyze_book's fine-grained progress to the book channel.
+        # Its 0..1 fraction drives the (long-running) detect stage's bar 0→100;
+        # once it returns, the fast reconcile/profile/cast events take over.
+        # An ETA is appended once enough has run to extrapolate.
+        _analysis_started = time.monotonic()
+
+        def _on_analysis_progress(fraction: float, message: str) -> None:
+            elapsed = time.monotonic() - _analysis_started
+            if fraction >= 0.04 and elapsed >= 1.0:
+                remaining = elapsed * (1.0 - fraction) / fraction
+                message = f"{message}  ·  ~{_format_eta(remaining)} left"
+            _pub(
+                {
+                    "type": "analysis_progress",
+                    "stage": "detect",
+                    "progress": int(round(fraction * 100)),
+                    "message": message,
+                }
+            )
+
         analysis = await literary_analysis.analyze_book(
-            chapter_texts, model_size=model_size
+            chapter_texts,
+            model_size=model_size,
+            progress_cb=_on_analysis_progress,
         )
 
-        _pub({"type": "analysis_progress", "stage": "detect", "progress": 40})
+        _pub({"type": "analysis_progress", "stage": "detect", "progress": 100})
 
         # ── Stage: reconcile ──────────────────────────────────────────────
         _pub({"type": "analysis_progress", "stage": "reconcile", "progress": 45})

@@ -16,7 +16,7 @@ import logging
 import re
 import warnings
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Callable, Optional
 
 from pydantic import BaseModel, Field
 
@@ -323,15 +323,26 @@ async def enrich_profiles(
     roster: list[dict],
     samples: dict[str, list[str]],
     model_size: str,
+    progress_cb: Optional[Callable[[int, int, str], None]] = None,
 ) -> list[dict]:
     """Enrich each character with gender/age/traits/vocal_description/archetype/color.
 
     Degrades gracefully: if the LLM call fails for a character the entry is
     returned with profile fields set to ``None`` rather than crashing.
+
+    ``progress_cb(done, total, name)`` — if given — is invoked at the start of
+    each character so callers can surface "profiling character N of M" progress
+    during this otherwise-opaque, one-LLM-call-per-character phase.
     """
     enriched: list[dict] = []
-    for char in roster:
+    total = len(roster)
+    for idx, char in enumerate(roster):
         name = char["name"]
+        if progress_cb is not None:
+            try:
+                progress_cb(idx, total, name)
+            except Exception:  # pragma: no cover - progress must never break analysis
+                logger.debug("enrich_profiles progress_cb raised", exc_info=True)
         char_samples = samples.get(name, [])
         sample_text = "\n".join(char_samples[:5])
         prompt = (
@@ -436,9 +447,17 @@ async def analyze_chapter(text: str, model_size: str = "1.7B") -> ChapterAnalysi
     )
 
 
+# Fraction of analyze_book's wall-clock spent in the per-chapter detection
+# loop vs. the per-character enrichment pass.  Detection dominates (one or
+# more LLM calls per chunk across every chapter), so it owns the first 80%
+# and enrichment the last 20%.  These only drive the progress bar, not logic.
+_DETECT_SPAN = 0.80
+
+
 async def analyze_book(
     chapters: list[str],
     model_size: str = "1.7B",
+    progress_cb: Optional[Callable[[float, str], None]] = None,
 ) -> BookAnalysis:
     """Analyse all chapters of a book.
 
@@ -450,14 +469,36 @@ async def analyze_book(
     "major" for the top contributors (dialogue_count >= median of non-zero
     counts, or explicitly the top half when there are ≥2 named characters)
     and "minor" for the rest.
+
+    ``progress_cb(fraction, message)`` — if given — is invoked repeatedly as
+    work advances (``fraction`` in ``[0, 1]`` across the whole call, ``message``
+    a human-readable description of the current step).  This is what lets the
+    UI show live progress during the multi-minute LLM passes instead of
+    appearing to hang.  Exceptions from the callback are swallowed.
     """
+
+    def _emit(fraction: float, message: str) -> None:
+        if progress_cb is None:
+            return
+        try:
+            progress_cb(max(0.0, min(1.0, fraction)), message)
+        except Exception:  # pragma: no cover - progress must never break analysis
+            logger.debug("analyze_book progress_cb raised", exc_info=True)
+
     chapter_analyses: list[ChapterAnalysis] = []
     all_speakers: list[dict] = []
 
-    for chapter_text in chapters:
+    total_chapters = len(chapters)
+    for i, chapter_text in enumerate(chapters):
+        _emit(
+            _DETECT_SPAN * (i / total_chapters) if total_chapters else 0.0,
+            f"Analysing chapter {i + 1} of {total_chapters} — finding speakers & dialogue…",
+        )
         ca = await analyze_chapter(chapter_text, model_size=model_size)
         chapter_analyses.append(ca)
         all_speakers.extend(ca.characters)
+
+    _emit(_DETECT_SPAN, "Reconciling characters across chapters…")
 
     # Global reconciliation (flatten counts from all chapters)
     global_per_chunk: list[dict] = []
@@ -495,9 +536,19 @@ async def analyze_book(
                 samples.setdefault(speaker, []).append(seg.get("text", ""))
 
     # --- Enrich profiles with LLM-derived fields ---
+    def _enrich_progress(done: int, total: int, name: str) -> None:
+        # Map enrichment (done/total) onto the final [_DETECT_SPAN, 1.0] band.
+        span = 1.0 - _DETECT_SPAN
+        frac = _DETECT_SPAN + (span * (done / total) if total else span)
+        _emit(frac, f"Designing voice for character {done + 1} of {total}: {name}…")
+
     global_characters = await enrich_profiles(
-        global_characters, samples=samples, model_size=model_size
+        global_characters,
+        samples=samples,
+        model_size=model_size,
+        progress_cb=_enrich_progress,
     )
+    _emit(1.0, "Finalising character profiles…")
 
     return BookAnalysis(
         chapters=chapter_analyses,
