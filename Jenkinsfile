@@ -51,6 +51,12 @@ pipeline {
                             rustc --version; bun --version; just --version; python3 --version
 
                             just setup
+                            # The default (CPU) sidecar must NOT ship the ~2.7GB CUDA/NVIDIA
+                            # libs that plain `torch` pulls on Linux (torch x.y+cuNNN). Swap to
+                            # CPU torch + drop orphaned nvidia-* wheels so the .deb is ~0.5GB
+                            # not 2.5GB. (CUDA users get the separate voicebox-server-cuda.)
+                            backend/venv/bin/pip install --index-url https://download.pytorch.org/whl/cpu --force-reinstall torch torchaudio
+                            backend/venv/bin/pip freeze | grep -iE '^nvidia[-_]' | cut -d'=' -f1 | xargs -r backend/venv/bin/pip uninstall -y || true
                             just build-server
                             python3 scripts/ci-disable-updater.py
                             ( cd tauri && bun run tauri build --bundles deb < /dev/null )
@@ -118,6 +124,8 @@ pipeline {
                             backend\\venv\\Scripts\\pip.exe install -r backend\\requirements.txt || exit /b 1
                             REM build-server.sh auto-installs PyInstaller on unix; do it explicitly here
                             backend\\venv\\Scripts\\pip.exe install pyinstaller || exit /b 1
+                            REM CPU sidecar: swap CUDA torch for the CPU build (smaller + correct)
+                            backend\\venv\\Scripts\\pip.exe install --index-url https://download.pytorch.org/whl/cpu --force-reinstall torch torchaudio || exit /b 1
                             call bun install || exit /b 1
                             backend\\venv\\Scripts\\python.exe scripts\\ci-disable-updater.py || exit /b 1
 
