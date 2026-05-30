@@ -55,12 +55,16 @@ pipeline {
 
                             just setup
                             just build-server
-                            # Inline --config disables updater-artifact signing (the
-                            # file-path form didn't apply); stdin from /dev/null turns
-                            # any stray interactive prompt into a fast EOF failure
-                            # instead of a silent hang.
-                            ( cd tauri && bun run tauri build --bundles deb,rpm \
-                                  --config '{"bundle":{"createUpdaterArtifacts":false}}' < /dev/null )
+                            # The conf sets plugins.updater.pubkey + createUpdaterArtifacts,
+                            # so tauri signs updater artifacts and blocks on a /dev/tty
+                            # password prompt in CI. Generate a throwaway no-password
+                            # signing key so signing is non-interactive. --verbose surfaces
+                            # the exact step if anything else stalls; stdin from /dev/null.
+                            ( cd tauri
+                              bun run tauri signer generate --ci -w ./.tauri-ci.key
+                              export TAURI_SIGNING_PRIVATE_KEY="$(cat ./.tauri-ci.key)"
+                              export TAURI_SIGNING_PRIVATE_KEY_PASSWORD=""
+                              bun run tauri build --verbose --bundles deb,rpm < /dev/null )
                         '''
                     }
                     post {
