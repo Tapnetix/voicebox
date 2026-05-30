@@ -116,6 +116,8 @@ pipeline {
                             uv venv --python 3.12 --seed backend\\venv || exit /b 1
                             backend\\venv\\Scripts\\python.exe -m pip install --upgrade pip || exit /b 1
                             backend\\venv\\Scripts\\pip.exe install -r backend\\requirements.txt || exit /b 1
+                            REM build-server.sh auto-installs PyInstaller on unix; do it explicitly here
+                            backend\\venv\\Scripts\\pip.exe install pyinstaller || exit /b 1
                             call bun install || exit /b 1
                             backend\\venv\\Scripts\\python.exe scripts\\ci-disable-updater.py || exit /b 1
 
