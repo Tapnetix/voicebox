@@ -3,6 +3,8 @@ import type { CSSProperties, ReactNode } from 'react';
 import { useEffect, useState } from 'react';
 import { Trans, useTranslation } from 'react-i18next';
 import voiceboxLogo from '@/assets/voicebox-logo.png';
+import { getAccelerationInfo } from '@/lib/acceleration';
+import { useServerHealth } from '@/lib/hooks/useServer';
 import { SPONSORS } from '@/lib/sponsors';
 import { usePlatform } from '@/platform/PlatformContext';
 
@@ -21,6 +23,15 @@ export function AboutPage() {
   const { t } = useTranslation();
   const platform = usePlatform();
   const [version, setVersion] = useState('');
+  const { data: health } = useServerHealth();
+
+  const accel = health ? getAccelerationInfo(health) : null;
+  const accelValue = health?.gpu_available ? (health.gpu_type ?? '') : t('settings.gpu.cpuOnly');
+  const slowWarning = accel?.appleFallback
+    ? t('settings.gpu.fallbackApple')
+    : accel?.cpuOnly
+      ? t('settings.gpu.fallbackCpu')
+      : null;
 
   useEffect(() => {
     platform.metadata
@@ -55,6 +66,17 @@ export function AboutPage() {
               <p className="text-xs text-muted-foreground/60 h-4">
                 {version ? `v${version}` : '\u00A0'}
               </p>
+              {health && accelValue && (
+                <p className="text-[11px] text-muted-foreground/50">
+                  {t('settings.about.acceleration', { value: accelValue })}
+                  {accel?.engine ? ` \u00B7 ${accel.engine}` : ''}
+                </p>
+              )}
+              {slowWarning && (
+                <p className="text-[11px] text-amber-600/80 dark:text-amber-400/80 max-w-xs mx-auto">
+                  {slowWarning}
+                </p>
+              )}
             </div>
           </FadeIn>
 

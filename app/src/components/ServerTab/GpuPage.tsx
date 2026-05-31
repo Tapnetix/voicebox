@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { apiClient } from '@/lib/api/client';
+import { getAccelerationInfo } from '@/lib/acceleration';
 import type { CudaDownloadProgress, HealthResponse } from '@/lib/api/types';
 import { useServerHealth } from '@/lib/hooks/useServer';
 import { usePlatform } from '@/platform/PlatformContext';
@@ -52,6 +53,13 @@ function GpuInfoCard({ health }: { health: HealthResponse }) {
   const isApple = gpuBackend === 'MPS' || gpuBackend === 'Metal';
   const showBackendVariant = health.backend_variant && health.backend_variant !== 'cpu';
 
+  const accel = getAccelerationInfo(health);
+  const slowWarning = accel.appleFallback
+    ? t('settings.gpu.fallbackApple')
+    : accel.cpuOnly
+      ? t('settings.gpu.fallbackCpu')
+      : null;
+
   return (
     <div className="rounded-lg border border-border/60 p-4">
       <div className="flex items-center gap-3">
@@ -74,6 +82,12 @@ function GpuInfoCard({ health }: { health: HealthResponse }) {
                   <>
                     <span className="text-border">|</span>
                     <span className="uppercase">{health.backend_variant}</span>
+                  </>
+                )}
+                {accel.engine && (
+                  <>
+                    <span className="text-border">|</span>
+                    <span>{t('settings.gpu.engine', { engine: accel.engine })}</span>
                   </>
                 )}
                 {health.vram_used_mb != null && health.vram_used_mb > 0 && (
@@ -102,6 +116,12 @@ function GpuInfoCard({ health }: { health: HealthResponse }) {
           </div>
         )}
       </div>
+      {slowWarning && (
+        <div className="mt-3 flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-2.5 py-1.5 text-xs text-amber-600 dark:text-amber-400">
+          <AlertCircle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+          <span>{slowWarning}</span>
+        </div>
+      )}
     </div>
   );
 }
