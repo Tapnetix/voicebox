@@ -1,42 +1,19 @@
 <p align="center">
-  <img src=".github/assets/icon-dark.webp" alt="Voicebox" width="120" height="120" />
+  <img src=".github/assets/icon-dark.webp" alt="VoiceIt" width="120" height="120" />
 </p>
 
-<h1 align="center">Voicebox</h1>
+<h1 align="center">VoiceIt</h1>
 
 <p align="center">
   <strong>The open-source AI voice studio.</strong><br/>
-  Clone any voice. Generate speech. Dictate into any app. Talk to agents in voices you own.<br/>
+  Clone any voice. Generate speech. Narrate audiobooks. Dictate into any app. Talk to agents in voices you own.<br/>
   The full voice I/O stack, running locally on your machine.
 </p>
 
 <p align="center">
-  <a href="https://github.com/jamiepine/voicebox/releases">
-    <img src="https://img.shields.io/github/downloads/jamiepine/voicebox/total?style=flat&color=blue" alt="Downloads" />
-  </a>
-  <a href="https://github.com/jamiepine/voicebox/releases/latest">
-    <img src="https://img.shields.io/github/v/release/jamiepine/voicebox?style=flat" alt="Release" />
-  </a>
-  <a href="https://github.com/jamiepine/voicebox/stargazers">
-    <img src="https://img.shields.io/github/stars/jamiepine/voicebox?style=flat" alt="Stars" />
-  </a>
-  <a href="https://github.com/jamiepine/voicebox/blob/main/LICENSE">
-    <img src="https://img.shields.io/github/license/jamiepine/voicebox?style=flat" alt="License" />
-  </a>
-  <a href="https://deepwiki.com/jamiepine/voicebox">
-    <img src="https://img.shields.io/static/v1?label=Ask&message=DeepWiki&color=5B6EF7" alt="Ask DeepWiki" />
-  </a>
-</p>
-
-<p align="center">
-    <a href="https://trendshift.io/repositories/21213" target="_blank"><img src="https://trendshift.io/api/badge/repositories/21213" alt="jamiepine%2Fvoicebox | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/></a>
-</p>
-
-<p align="center">
-  <a href="https://voicebox.sh">voicebox.sh</a> •
-  <a href="https://docs.voicebox.sh">Docs</a> •
   <a href="#download">Download</a> •
   <a href="#features">Features</a> •
+  <a href="#audiobooks">Audiobooks</a> •
   <a href="#api">API</a> •
   <a href="docs/content/docs/overview/troubleshooting.mdx">Troubleshooting</a>
 </p>
@@ -44,32 +21,26 @@
 <br/>
 
 <p align="center">
-  <a href="https://voicebox.sh">
-    <img src="landing/public/assets/app-screenshot-1.webp" alt="Voicebox App Screenshot" width="800" />
-  </a>
-</p>
-
-<p align="center">
-  <em>Click the image above to watch the demo video on <a href="https://voicebox.sh">voicebox.sh</a></em>
+  <img src="landing/public/assets/app-screenshot-1.webp" alt="VoiceIt App Screenshot" width="800" />
 </p>
 
 <br/>
 
 <p align="center">
-  <img src="landing/public/assets/app-screenshot-2.webp" alt="Voicebox Screenshot 2" width="800" />
+  <img src="landing/public/assets/app-screenshot-2.webp" alt="VoiceIt Screenshot 2" width="800" />
 </p>
 
 <p align="center">
-  <img src="landing/public/assets/app-screenshot-3.webp" alt="Voicebox Screenshot 3" width="800" />
+  <img src="landing/public/assets/app-screenshot-3.webp" alt="VoiceIt Screenshot 3" width="800" />
 </p>
 
 <br/>
 
-## What is Voicebox?
+## What is VoiceIt?
 
-Voicebox is a **local-first AI voice studio** — a free and open-source alternative to **ElevenLabs** and **WisprFlow** in one app. Clone voices from a few seconds of audio, generate speech in 23 languages across 7 TTS engines, dictate into any text field with a global hotkey, and give any MCP-aware AI agent a voice of your choosing.
+VoiceIt is a **local-first AI voice studio** — a free and open-source alternative to **ElevenLabs** and **WisprFlow** in one app. Clone voices from a few seconds of audio, generate speech in 23 languages across 7 TTS engines, dictate into any text field with a global hotkey, and give any MCP-aware AI agent a voice of your choosing.
 
-The two cloud incumbents sit on opposite halves of the voice I/O loop — ElevenLabs on output, WisprFlow on input. Voicebox does both, bridges them with a bundled local LLM for refinement and per-profile personas, and runs the whole thing on your machine.
+The two cloud incumbents sit on opposite halves of the voice I/O loop — ElevenLabs on output, WisprFlow on input. VoiceIt does both, bridges them with a bundled local LLM for refinement and per-profile personas, and runs the whole thing on your machine.
 
 - **Complete privacy** — models, voice data, and captures never leave your machine
 - **7 TTS engines** — Qwen3-TTS, Qwen CustomVoice, LuxTTS, Chatterbox Multilingual, Chatterbox Turbo, HumeAI TADA, and Kokoro
@@ -78,6 +49,7 @@ The two cloud incumbents sit on opposite halves of the voice I/O loop — Eleven
 - **Post-processing effects** — pitch shift, reverb, delay, chorus, compression, and filters
 - **Expressive speech** — paralinguistic tags like `[laugh]`, `[sigh]`, `[gasp]` via Chatterbox Turbo; natural-language delivery control via Qwen CustomVoice
 - **Unlimited length** — auto-chunking with crossfade for scripts, articles, and chapters
+- **Audiobooks** — import an EPUB/text, auto-detect characters and dialogue with a local LLM, cast a distinct voice per character, and narrate the whole book
 - **Stories editor** — multi-track timeline for conversations, podcasts, and narratives
 - **Voice input** — global dictation hotkey with push-to-talk and toggle modes, accessibility-verified auto-paste on macOS, in-app mic on every text field, Whisper-based STT
 - **Agent voice output** — one tool call (`voicebox.speak`) and any MCP-aware agent (Claude Code, Cursor, Cline) speaks to you in a voice you've cloned
@@ -90,16 +62,18 @@ The two cloud incumbents sit on opposite halves of the voice I/O loop — Eleven
 
 ## Download
 
-| Platform              | Download                                               |
-| --------------------- | ------------------------------------------------------ |
-| macOS (Apple Silicon) | [Download DMG](https://voicebox.sh/download/mac-arm)   |
-| macOS (Intel)         | [Download DMG](https://voicebox.sh/download/mac-intel) |
-| Windows               | [Download MSI](https://voicebox.sh/download/windows)   |
-| Docker                | `docker compose up`                                    |
+Grab the latest installers from the **[GitHub Releases page](https://github.com/Tapnetix/VoiceIt/releases/latest)**:
 
-> **[View all binaries →](https://github.com/jamiepine/voicebox/releases/latest)**
+| Platform              | Installer                                                                          |
+| --------------------- | ---------------------------------------------------------------------------------- |
+| macOS (Apple Silicon) | [`.dmg`](https://github.com/Tapnetix/VoiceIt/releases/latest) — signed, MLX/Metal  |
+| Linux                 | [`.deb`](https://github.com/Tapnetix/VoiceIt/releases/latest)                      |
+| Windows               | [`.exe`](https://github.com/Tapnetix/VoiceIt/releases/latest) — NSIS installer     |
+| Docker                | `docker compose up`                                                                |
 
-> **Linux** — Pre-built binaries are not yet available. See [voicebox.sh/linux-install](https://voicebox.sh/linux-install) for build-from-source instructions.
+> **[Browse all releases and assets →](https://github.com/Tapnetix/VoiceIt/releases)**
+
+> **macOS first launch** — the app is ad-hoc signed (not yet notarized), so the first time you open it, right-click the app → **Open** to get past Gatekeeper.
 
 > **Having trouble?** See the [Troubleshooting Guide](docs/content/docs/overview/troubleshooting.mdx) for common install, generation, model-download, and GPU issues.
 
@@ -196,18 +170,18 @@ Multi-voice timeline editor for conversations, podcasts, and narratives.
 
 ### Global Dictation & Voice Input
 
-The other half of the voice I/O loop. Hold a hotkey anywhere on your system, speak, release — on macOS the transcript pastes straight into the focused text field. Or hit the mic on any Voicebox text input and dictate directly into the app.
+The other half of the voice I/O loop. Hold a hotkey anywhere on your system, speak, release — on macOS the transcript pastes straight into the focused text field. Or hit the mic on any VoiceIt text input and dictate directly into the app.
 
 - **Configurable chord bindings** — hold-to-speak and tap-to-toggle chords, each rebindable in the in-app chord picker. Holding push-to-talk and tapping `Space` mid-hold upgrades into a toggle session without a gap in audio
 - **Target-aware paste (macOS)** — accessibility-verified injection into the focused text field, with atomic clipboard save/restore so your clipboard isn't clobbered
 - **First-run permissions UX** — in-app gates walk you through the macOS Accessibility and Input Monitoring grants with deep-links to System Settings
-- **In-app mic button** on every Voicebox text field — generation form, profile descriptions, story titles, anywhere you'd type
+- **In-app mic button** on every VoiceIt text field — generation form, profile descriptions, story titles, anywhere you'd type
 - **LLM refinement** — optional cleanup of ums, stutters, and false starts before paste
 - **On-screen pill** — floating overlay surfacing `recording`, `transcribing`, `refining`, and `speaking` states. Same pill agents use when they speak to you, so there's one mental model for both directions of the loop
 
 ### Speech-to-Text
 
-Voicebox runs OpenAI Whisper for transcription — the same model that backs dictation, the Captures tab, and the `/transcribe` API. Running on MLX (Apple Silicon) or PyTorch (CUDA / ROCm / DirectML / CPU) depending on your platform.
+VoiceIt runs OpenAI Whisper for transcription — the same model that backs dictation, the Captures tab, and the `/transcribe` API. Running on MLX (Apple Silicon) or PyTorch (CUDA / ROCm / DirectML / CPU) depending on your platform.
 
 | Size                          | Notes                                              |
 | ----------------------------- | -------------------------------------------------- |
@@ -224,7 +198,7 @@ Every dictation, in-app recording, and uploaded audio file lands in the Captures
 - **Edit inline** — tweak the transcript and save on blur
 - **Play as voice profile** — turn any capture into speech with a cloned voice, one click
 - **Promote to voice sample** — use a capture's audio + transcript as a reference sample on any voice profile
-- **Local capture storage** — original audio and transcript stay in your Voicebox data directory, with a folder shortcut in Settings
+- **Local capture storage** — original audio and transcript stay in your VoiceIt data directory, with a folder shortcut in Settings
 
 ### Agent Voice Output
 
@@ -278,9 +252,27 @@ Use cases: agent dev loops (dictate a question, hear the answer in a cloned voic
 
 ---
 
+## Audiobooks
+
+Turn a book into a fully-voiced audiobook — locally, with a distinct voice per character.
+
+Import an **EPUB** or plain-text manuscript, and VoiceIt runs a bundled local LLM (Qwen3) over the text to do the literary heavy lifting:
+
+- **Character & dialogue detection** — chunks each chapter and identifies who is speaking, attributing every line to a character or the narrator
+- **Alias reconciliation** — merges "Mr. Holmes", "Sherlock", and "Holmes" into one character across the whole book
+- **Auto-casting** — assigns each detected character a fitting voice (gender, age, and an LLM-derived vocal description drive the match), with the narrator voice configurable
+- **Per-character profiles** — review and tweak the cast before narration; characters with the most dialogue get designed voices, minor ones get presets
+- **Full-book narration** — generates the audio per segment and stitches it together
+
+The analysis runs as a background task with **live progress** — current step (loading the model, analysing chapter *N* of *M*, profiling characters) plus an estimated time remaining — so a multi-minute pass never looks stuck.
+
+> GPU coordination unloads the TTS engine during the LLM analysis pass so the two never contend for VRAM. On Apple Silicon the analysis runs on MLX; see the [GPU Support](#gpu-support) table.
+
+---
+
 ## API
 
-Voicebox exposes a REST API for integrating voice I/O into your own apps and agents.
+VoiceIt exposes a REST API for integrating voice I/O into your own apps and agents.
 
 ```bash
 # Generate speech
@@ -307,7 +299,7 @@ curl http://127.0.0.1:17493/profiles
 
 ### MCP server
 
-Voicebox ships a built-in **Model Context Protocol** server so any MCP-aware agent (Claude Code, Cursor, Windsurf, Cline, VS Code MCP extensions) can speak, transcribe, and browse captures and profiles.
+VoiceIt ships a built-in **Model Context Protocol** server so any MCP-aware agent (Claude Code, Cursor, Windsurf, Cline, VS Code MCP extensions) can speak, transcribe, and browse captures and profiles.
 
 **Claude Code one-liner:**
 
@@ -344,7 +336,7 @@ claude mcp add voicebox \
 }
 ```
 
-Four tools ship: `voicebox.speak`, `voicebox.transcribe`, `voicebox.list_captures`, `voicebox.list_profiles`. Per-client voice bindings are managed in **Voicebox → Settings → MCP**. See the [full MCP guide](docs/content/docs/overview/mcp-server.mdx) for tool signatures, resolution precedence, the speaking-pill contract, and security notes.
+Four tools ship: `voicebox.speak`, `voicebox.transcribe`, `voicebox.list_captures`, `voicebox.list_profiles`. Per-client voice bindings are managed in **VoiceIt → Settings → MCP**. See the [full MCP guide](docs/content/docs/overview/mcp-server.mdx) for tool signatures, resolution precedence, the speaking-pill contract, and security notes.
 
 ```ts
 // In any MCP-aware agent:
@@ -394,7 +386,7 @@ Full API documentation available at `http://127.0.0.1:17493/docs`.
 | **Long-form capture**              | Dual-stream recorder (mic + system audio) with summary LLM transform     |
 | **Platform sinks**                 | Apple Notes, Obsidian, and other opt-in integrations                     |
 | **Plugin architecture**            | Extend with custom models, transforms, and sinks                         |
-| **Mobile companion**               | Control Voicebox from your phone                                         |
+| **Mobile companion**               | Control VoiceIt from your phone                                         |
 
 For the **full engineering status, open-issue triage, and prioritized work queue**, see [`docs/PROJECT_STATUS.md`](docs/PROJECT_STATUS.md) — a living document that tracks what's shipped, what's in-flight, candidate TTS engines under evaluation, and why we've accepted or backlogged specific integrations.
 
@@ -407,8 +399,8 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed setup and contribution guide
 ### Quick Start
 
 ```bash
-git clone https://github.com/jamiepine/voicebox.git
-cd voicebox
+git clone https://github.com/Tapnetix/VoiceIt.git
+cd VoiceIt
 
 just setup   # creates Python venv, installs all deps
 just dev     # starts backend + desktop app
@@ -418,7 +410,7 @@ Install [just](https://github.com/casey/just): `brew install just` or `cargo ins
 
 **Prerequisites:** [Bun](https://bun.sh), [Rust](https://rustup.rs), [Python 3.11+](https://python.org), [Tauri Prerequisites](https://v2.tauri.app/start/prerequisites/), and [Xcode](https://developer.apple.com/xcode/) on macOS.
 
-The repo ships a pre-wired `.mcp.json` at the root — running Claude Code inside this checkout picks up the Voicebox MCP tools automatically once the dev app is running.
+The repo ships a pre-wired `.mcp.json` at the root — running Claude Code inside this checkout picks up the VoiceIt MCP tools automatically once the dev app is running.
 
 ### Building Locally
 
@@ -469,5 +461,5 @@ MIT License — see [LICENSE](LICENSE) for details.
 ---
 
 <p align="center">
-  <a href="https://voicebox.sh">voicebox.sh</a>
+  <a href="https://github.com/Tapnetix/VoiceIt">github.com/Tapnetix/VoiceIt</a>
 </p>

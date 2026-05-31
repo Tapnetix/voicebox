@@ -14,7 +14,7 @@ We release patches for security vulnerabilities. Which versions are eligible for
 If you discover a security vulnerability, please report it responsibly:
 
 1. **Do not** open a public GitHub issue
-2. Email security details to: [security@voicebox.sh](mailto:security@voicebox.sh)
+2. Report it privately via [GitHub Security Advisories](https://github.com/Tapnetix/VoiceIt/security/advisories/new)
 3. Include:
    - Description of the vulnerability
    - Steps to reproduce

@@ -170,7 +170,7 @@ and positioning stay in sync with the product.
   that explicitly frames Voicebox as "the open-source local alternative to
   WisprFlow and ElevenLabs." Competitive framing belongs in the README and on
   the landing page — not in-app (reads as defensive).
-- **voicebox.sh landing page** — same positioning shift.
+- **VoiceIt landing page** — same positioning shift.
 - **GitHub About / repo topics** — swap "voice-cloning" or similar tags for
   broader "voice-io," "local-tts," "local-stt," etc.
 - **Release notes** — the Phase 4 launch note is the "we're now voice I/O" moment.
