@@ -22,7 +22,7 @@ export default async function Page(props: PageProps<'/[[...slug]]'>) {
       full={page.data.full}
       editOnGithub={{
         owner: 'jamiepine',
-        repo: 'voicebox',
+        repo: 'voiceit',
         sha: 'main',
         path: `docs/content/docs/${page.path}`,
       }}

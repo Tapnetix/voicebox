@@ -7,7 +7,7 @@
 
 ## [0.6.0] - 2026-05-29
 
-**The Audiobook release.** Voicebox grows from a voice studio into a multi-voice audiobook producer. Drop in a book, and a local LLM reads it the way a director casts a play — finding every character, attributing each line of dialogue, and proposing a distinct voice for each speaker. Review the cast and fix any mis-attributed line by ear, generate the whole book chapter by chapter through the same serial TTS queue everything else uses, then export a chaptered M4B, a single MP3, or a per-chapter ZIP. Every step runs on your machine.
+**The Audiobook release.** VoiceIt grows from a voice studio into a multi-voice audiobook producer. Drop in a book, and a local LLM reads it the way a director casts a play — finding every character, attributing each line of dialogue, and proposing a distinct voice for each speaker. Review the cast and fix any mis-attributed line by ear, generate the whole book chapter by chapter through the same serial TTS queue everything else uses, then export a chaptered M4B, a single MP3, or a per-chapter ZIP. Every step runs on your machine.
 
 ### Import & analyze — a book becomes a cast
 
@@ -24,19 +24,19 @@
 
 ### Generate & export — render the whole book
 
-- **Chapter & book generation.** Generate a chapter (or the whole book) from the overview; audio materializes lazily and each segment is enqueued through Voicebox's serial TTS queue so book rendering never contends with previews or dictation. Per-segment progress streams until the chapter is playable.
+- **Chapter & book generation.** Generate a chapter (or the whole book) from the overview; audio materializes lazily and each segment is enqueued through VoiceIt's serial TTS queue so book rendering never contends with previews or dictation. Per-segment progress streams until the chapter is playable.
 - **Regenerate a single line** into a new take without disturbing the rest of the chapter.
 - **Audiobook export.** Stitch each chapter's segments with inter-segment / scene / chapter pauses, normalize to a target LUFS, and export **M4B with chapter markers**, a single **MP3**, or a **per-chapter ZIP** — each with ID3 tags and embedded cover/title/author. Progress and the finished download stream over the book channel.
 
 ## [0.5.0] - 2026-04-22
 
-**The Capture release.** Voicebox stops being just a voice-cloning studio and becomes a full AI voice studio. Hold a key anywhere on your machine, speak, release — the transcript lands in the focused text field. Flip the primitive around and any MCP-aware agent — Claude Code, Cursor, Spacebot — speaks back through an on-screen pill in one of your cloned voices. A local LLM sits between the two, so transcripts come out clean and voice profiles can carry a personality that reshapes what the agent says before it gets spoken.
+**The Capture release.** VoiceIt stops being just a voice-cloning studio and becomes a full AI voice studio. Hold a key anywhere on your machine, speak, release — the transcript lands in the focused text field. Flip the primitive around and any MCP-aware agent — Claude Code, Cursor, Spacebot — speaks back through an on-screen pill in one of your cloned voices. A local LLM sits between the two, so transcripts come out clean and voice profiles can carry a personality that reshapes what the agent says before it gets spoken.
 
 ### Dictation — speak anywhere, paste anywhere
 
 - **Global hotkey capture.** Hold a customizable chord anywhere on your machine (defaults: right-Cmd + right-Option on macOS, right-Ctrl + right-Shift on Windows), speak, release. A floating on-screen pill walks through recording → transcribing → refining → done with a live elapsed timer. The transcript lands as clean text.
 - **Push-to-talk and toggle modes, each with its own chord.** The default toggle chord adds Space to the push-to-talk chord. Holding PTT and tapping Space mid-hold upgrades a hold into a hands-free session without a gap in the recording.
-- **Auto-paste into the focused app.** Once transcription finishes, Voicebox synthesizes a paste into whatever text field had focus when you started the chord — not wherever focus drifted while you were talking. Works across Dvorak / AZERTY layouts. Your clipboard is saved before and restored after.
+- **Auto-paste into the focused app.** Once transcription finishes, VoiceIt synthesizes a paste into whatever text field had focus when you started the chord — not wherever focus drifted while you were talking. Works across Dvorak / AZERTY layouts. Your clipboard is saved before and restored after.
 - **Chord picker UI.** Customize either chord from Settings → Captures by holding the keys you want. Left/right modifier badges show whether a key is the left or right variant.
 - **Defaults stay out of your way.** macOS defaults avoid left-hand Cmd+Option chords so the system shortcuts they collide with stay yours. Windows defaults route around AltGr collisions on German / French / Spanish layouts.
 - **Accessibility permission is scoped.** If macOS Accessibility isn't granted, dictation still runs and transcripts still land in the Captures tab — only synthetic paste is disabled. The permission prompt lives inline next to the auto-paste toggle, not as a global banner.
@@ -50,20 +50,20 @@ Voice profiles now carry an optional **personality** — a free-form description
 
 The same LLM doubles as the refinement model, so there's one local LLM in the app, not two.
 
-**API surface.** `POST /generate`, `POST /speak`, and the MCP `voicebox.speak` tool accept `personality: bool`. `POST /profiles/{id}/compose` powers the shuffle button. MCP client bindings carry a `default_personality: bool` that applies when `personality` isn't passed explicitly.
+**API surface.** `POST /generate`, `POST /speak`, and the MCP `voiceit.speak` tool accept `personality: bool`. `POST /profiles/{id}/compose` powers the shuffle button. MCP client bindings carry a `default_personality: bool` that applies when `personality` isn't passed explicitly.
 
 ### Agents — any MCP-aware agent gets a voice
 
-Voicebox ships a built-in **Model Context Protocol** server at `http://127.0.0.1:17493/mcp` so Claude Code, Cursor, Windsurf, Cline, VS Code MCP extensions — any MCP-aware agent — can call into your local Voicebox install. Four tools ship with dotted names:
+VoiceIt ships a built-in **Model Context Protocol** server at `http://127.0.0.1:17493/mcp` so Claude Code, Cursor, Windsurf, Cline, VS Code MCP extensions — any MCP-aware agent — can call into your local VoiceIt install. Four tools ship with dotted names:
 
-- **`voicebox.speak`** — speak text in any voice profile, with optional `personality: true` to run through the profile's personality LLM first
-- **`voicebox.transcribe`** — Whisper transcription of a base64 blob or an absolute local path. Path mode is restricted to loopback callers so a Voicebox bound on `0.0.0.0` doesn't double as an unauthenticated arbitrary-local-file read primitive.
-- **`voicebox.list_captures`** — recent captures with their transcripts
-- **`voicebox.list_profiles`** — available voice profiles (cloned + preset)
+- **`voiceit.speak`** — speak text in any voice profile, with optional `personality: true` to run through the profile's personality LLM first
+- **`voiceit.transcribe`** — Whisper transcription of a base64 blob or an absolute local path. Path mode is restricted to loopback callers so a VoiceIt bound on `0.0.0.0` doesn't double as an unauthenticated arbitrary-local-file read primitive.
+- **`voiceit.list_captures`** — recent captures with their transcripts
+- **`voiceit.list_profiles`** — available voice profiles (cloned + preset)
 
-- **Streamable HTTP as primary transport.** Cursor / Windsurf / VS Code / Claude Code all support it out of the box — drop a `mcpServers` block with the URL and an `X-Voicebox-Client-Id` header.
-- **Stdio shim for clients that don't speak HTTP MCP.** A `voicebox-mcp` binary ships inside the app bundle as a Tauri sidecar. The Settings page renders the install snippet with the right absolute path pre-filled.
-- **Per-client voice binding.** Pin Claude Code to Morgan, Cursor to Scarlett, Cline to its own voice — the `X-Voicebox-Client-Id` header resolves to a bound voice whenever `speak` is called without an explicit `profile`. Managed in **Settings → MCP**.
+- **Streamable HTTP as primary transport.** Cursor / Windsurf / VS Code / Claude Code all support it out of the box — drop a `mcpServers` block with the URL and an `X-VoiceIt-Client-Id` header.
+- **Stdio shim for clients that don't speak HTTP MCP.** A `voiceit-mcp` binary ships inside the app bundle as a Tauri sidecar. The Settings page renders the install snippet with the right absolute path pre-filled.
+- **Per-client voice binding.** Pin Claude Code to Morgan, Cursor to Scarlett, Cline to its own voice — the `X-VoiceIt-Client-Id` header resolves to a bound voice whenever `speak` is called without an explicit `profile`. Managed in **Settings → MCP**.
 - **Profile resolution precedence.** Explicit `profile` arg (name or id, case-insensitive) → per-client binding → global default from `capture_settings.default_playback_voice_id` → error with a pointer to Settings.
 - **Speaking pill.** Agent-initiated speech surfaces the same on-screen pill as dictation, in a `speaking` state with the profile name and an elapsed timer. Silent background TTS is a trust hazard — the pill always shows what's coming out of your machine.
 - **`POST /speak` REST wrapper.** Same code path and voice resolution for shell scripts, ACP, A2A, GitHub Actions, or anything else that isn't MCP-native.
@@ -71,7 +71,7 @@ Voicebox ships a built-in **Model Context Protocol** server at `http://127.0.0.1
 **Claude Code one-liner:**
 
 ```
-claude mcp add voicebox --transport http --url http://127.0.0.1:17493/mcp --header "X-Voicebox-Client-Id: claude-code"
+claude mcp add voiceit --transport http --url http://127.0.0.1:17493/mcp --header "X-VoiceIt-Client-Id: claude-code"
 ```
 
 ### Refinement
@@ -134,7 +134,7 @@ Hotfix for a regression in 0.4.3 where generation and transcription could fail o
 
 ## [0.4.3] - 2026-04-20
 
-A patch focused on two user-impacting reliability fixes: macOS DMG notarization (unblocks `brew install voicebox` on macOS 15 Sequoia and fixes spurious "app isn't signed" Gatekeeper dialogs on older Intel Macs) and Kokoro Japanese voice initialization on fresh installs.
+A patch focused on two user-impacting reliability fixes: macOS DMG notarization (unblocks `brew install voiceit` on macOS 15 Sequoia and fixes spurious "app isn't signed" Gatekeeper dialogs on older Intel Macs) and Kokoro Japanese voice initialization on fresh installs.
 
 ### macOS
 
@@ -217,7 +217,7 @@ A fast follow-up to 0.4.0 focused on making the new engines actually load in the
 
 ## [0.4.0] - 2026-04-16
 
-The biggest Voicebox release yet. Three new TTS engines bring the lineup to **seven** — HumeAI TADA, Kokoro 82M, and Qwen CustomVoice join Qwen3-TTS, LuxTTS, Chatterbox Multilingual, and Chatterbox Turbo. GPU support broadens to Intel Arc (XPU) and NVIDIA Blackwell (RTX 50-series), with runtime diagnostics that warn when your PyTorch build doesn't match your GPU. The CUDA backend is now split into independently versioned server and library archives, so upgrading no longer redownloads 4 GB of PyTorch/CUDA DLLs.
+The biggest VoiceIt release yet. Three new TTS engines bring the lineup to **seven** — HumeAI TADA, Kokoro 82M, and Qwen CustomVoice join Qwen3-TTS, LuxTTS, Chatterbox Multilingual, and Chatterbox Turbo. GPU support broadens to Intel Arc (XPU) and NVIDIA Blackwell (RTX 50-series), with runtime diagnostics that warn when your PyTorch build doesn't match your GPU. The CUDA backend is now split into independently versioned server and library archives, so upgrading no longer redownloads 4 GB of PyTorch/CUDA DLLs.
 
 This release also marks a big community moment: **13 new contributors** shipped fixes and features in 0.4.0. Thirty-plus bug fixes target the most-reported issues in the tracker — numpy 2.x TTS crashes, Windows background-server reliability, macOS 11 launch failures, audio playback silence, Stories clip-splitting races, history status staleness, and more.
 
@@ -243,7 +243,7 @@ This release also marks a big community moment: **13 new contributors** shipped 
 
 ### Voice Profile UX
 
-Until 0.4, every engine in Voicebox was a cloning model, so every voice profile was usable with every engine and the profile grid just showed them all. Introducing Kokoro and Qwen CustomVoice — which work from preset voices rather than cloned samples — broke that assumption for the first time. An early cut on `main` filtered the grid by the selected engine, which left users running pre-release builds thinking their cloned voices had vanished whenever they switched to a preset-only engine.
+Until 0.4, every engine in VoiceIt was a cloning model, so every voice profile was usable with every engine and the profile grid just showed them all. Introducing Kokoro and Qwen CustomVoice — which work from preset voices rather than cloned samples — broke that assumption for the first time. An early cut on `main` filtered the grid by the selected engine, which left users running pre-release builds thinking their cloned voices had vanished whenever they switched to a preset-only engine.
 
 This release ships the resolution before it ever reaches a tagged version:
 
@@ -275,7 +275,7 @@ This release ships the resolution before it ever reaches a tagged version:
 
 #### Split CUDA Backend ([#298](https://github.com/jamiepine/voicebox/pull/298))
 - CUDA backend now ships as two independently versioned archives: a small server binary and a large libs archive (the ~4 GB of PyTorch/CUDA DLLs)
-- Upgrading Voicebox no longer redownloads the libs archive when only the server binary changed
+- Upgrading VoiceIt no longer redownloads the libs archive when only the server binary changed
 - Added `asyncio.Lock` around `download_cuda_binary()` so auto-update and manual download can't race on the same temp file ([#428](https://github.com/jamiepine/voicebox/pull/428))
 - Updated `package_cuda.py` for PyInstaller 6.18 onedir layout
 - Temp archives are always cleaned up on failure, even when the install aborts mid-extract
@@ -322,7 +322,7 @@ This release ships the resolution before it ever reaches a tagged version:
 
 ### New Contributors
 
-Huge thank you to everyone who contributed their first PR to Voicebox in this release:
+Huge thank you to everyone who contributed their first PR to VoiceIt in this release:
 
 [@liorshahverdi](https://github.com/liorshahverdi), [@nicoschtein](https://github.com/nicoschtein), [@ArfianID](https://github.com/ArfianID), [@aimaaaimaa](https://github.com/aimaaaimaa), [@maxmcoding](https://github.com/maxmcoding), [@Khalodddd](https://github.com/Khalodddd), [@LuisSambrano](https://github.com/LuisSambrano), [@shaun0927](https://github.com/shaun0927), [@malletfils](https://github.com/malletfils), [@mvanhorn](https://github.com/mvanhorn), [@kuishou68](https://github.com/kuishou68), [@txhno](https://github.com/txhno), [@MukundaKatta](https://github.com/MukundaKatta)
 
@@ -443,13 +443,13 @@ The v0.2.1/v0.2.2 builds could not download or load models that weren't already 
 
 ## [0.2.1] - 2026-03-15
 
-Voicebox v0.1.x was a single-engine voice cloning app built around Qwen3-TTS. v0.2.0 is a ground-up rethink: four TTS engines, 23 languages, paralinguistic emotion controls, a post-processing effects pipeline, unlimited generation length, an async generation queue, and support for every major GPU vendor. Plus Docker.
+VoiceIt v0.1.x was a single-engine voice cloning app built around Qwen3-TTS. v0.2.0 is a ground-up rethink: four TTS engines, 23 languages, paralinguistic emotion controls, a post-processing effects pipeline, unlimited generation length, an async generation queue, and support for every major GPU vendor. Plus Docker.
 
 ### New TTS Engines
 
 #### Multi-Engine Architecture
 
-Voicebox now runs **four independent TTS engines** behind a thread-safe per-engine backend registry. Switch engines per-generation from a single dropdown — no restart required.
+VoiceIt now runs **four independent TTS engines** behind a thread-safe per-engine backend registry. Switch engines per-generation from a single dropdown — no restart required.
 
 | Engine                      | Languages | Size    | Key Strengths                                 |
 | --------------------------- | --------- | ------- | --------------------------------------------- |
@@ -719,7 +719,7 @@ Fixed recording length limit at 0:29 to auto stop instead of passing the limit a
 
 ## [0.1.0] - 2026-01-27
 
-The first public release of Voicebox — an open-source voice synthesis studio powered by Qwen3-TTS.
+The first public release of VoiceIt — an open-source voice synthesis studio powered by Qwen3-TTS.
 
 ### Voice Cloning with Qwen3-TTS
 

@@ -36,7 +36,7 @@ def _make_app(tmp_path, monkeypatch, include_analysis: bool = False):
         finally:
             db.close()
 
-    monkeypatch.setenv("VOICEBOX_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("VOICEIT_DATA_DIR", str(tmp_path))
     import backend.config as _cfg
     _cfg._data_dir = tmp_path
 

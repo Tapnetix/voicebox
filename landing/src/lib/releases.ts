@@ -84,12 +84,12 @@ export async function getLatestRelease(): Promise<ReleaseInfo> {
       totalDownloads,
       downloadLinks: {
         macArm:
-          downloadLinks.macArm || `${baseUrl}/Voicebox_${version.replace('v', '')}_aarch64.dmg`,
+          downloadLinks.macArm || `${baseUrl}/VoiceIt_${version.replace('v', '')}_aarch64.dmg`,
         macIntel:
-          downloadLinks.macIntel || `${baseUrl}/Voicebox_${version.replace('v', '')}_x64.dmg`,
+          downloadLinks.macIntel || `${baseUrl}/VoiceIt_${version.replace('v', '')}_x64.dmg`,
         windows:
-          downloadLinks.windows || `${baseUrl}/voicebox_${version.replace('v', '')}_x64_en-US.msi`,
-        linux: downloadLinks.linux || `${baseUrl}/voicebox_x86_64-unknown-linux-gnu.AppImage`,
+          downloadLinks.windows || `${baseUrl}/voiceit_${version.replace('v', '')}_x64_en-US.msi`,
+        linux: downloadLinks.linux || `${baseUrl}/voiceit_x86_64-unknown-linux-gnu.AppImage`,
       },
     };
 

@@ -1,4 +1,4 @@
-// Download links for voicebox releases
+// Download links for voiceit releases
 // These are fallback values - link to releases page if API fails
 export const LATEST_VERSION = 'v0.1.0';
 

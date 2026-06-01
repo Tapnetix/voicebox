@@ -85,7 +85,7 @@ landing/
 │       ├── utils.ts        # Utility functions
 │       └── constants.ts    # App constants
 ├── public/
-│   └── voicebox-logo.png   # Logo asset
+│   └── voiceit-logo.png   # Logo asset
 └── nixpacks.toml          # Railway deployment config
 ```
 

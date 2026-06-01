@@ -1,7 +1,7 @@
 services:
-  voicebox:
+  voiceit:
     build: .
-    container_name: voicebox
+    container_name: voiceit
     restart: unless-stopped
 
     ports:
@@ -15,17 +15,17 @@ services:
       - ./output:/app/data/generations
 
       # Named volume for profiles, DB, cache (persists across container restarts)
-      - voicebox-data:/app/data
+      - voiceit-data:/app/data
 
       # HuggingFace model cache (so models aren't re-downloaded on rebuild)
-      - huggingface-cache:/home/voicebox/.cache/huggingface
+      - huggingface-cache:/home/voiceit/.cache/huggingface
 
     environment:
       - LOG_LEVEL=info
       - NUMBA_CACHE_DIR=/tmp/numba_cache
 
     networks:
-      - voicebox-net
+      - voiceit-net
 
     deploy:
       resources:
@@ -34,9 +34,9 @@ services:
           memory: 8G
 
 networks:
-  voicebox-net:
+  voiceit-net:
     driver: bridge
 
 volumes:
-  voicebox-data:
+  voiceit-data:
   huggingface-cache:

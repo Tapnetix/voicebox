@@ -1,10 +1,10 @@
-# Voicebox MCP server
+# VoiceIt MCP server
 
 Local **Model Context Protocol** server — lets any MCP-aware agent
 (Claude Code, Cursor, Windsurf, VS Code MCP extensions, etc.) speak text
 in your cloned voices, transcribe audio, and browse captures.
 
-The server runs inside the same `uvicorn` process as the rest of Voicebox
+The server runs inside the same `uvicorn` process as the rest of VoiceIt
 and is mounted at `/mcp` (Streamable HTTP transport).
 
 ## Install into your agent
@@ -14,23 +14,23 @@ Preferred — direct HTTP:
 ```json
 {
   "mcpServers": {
-    "voicebox": {
+    "voiceit": {
       "url": "http://127.0.0.1:17493/mcp",
-      "headers": { "X-Voicebox-Client-Id": "claude-code" }
+      "headers": { "X-VoiceIt-Client-Id": "claude-code" }
     }
   }
 }
 ```
 
 Fallback — stdio shim (when the client doesn't speak HTTP MCP). The
-`voicebox-mcp` binary ships inside the Voicebox.app bundle:
+`voiceit-mcp` binary ships inside the VoiceIt.app bundle:
 
 ```json
 {
   "mcpServers": {
-    "voicebox": {
-      "command": "/Applications/Voicebox.app/Contents/MacOS/voicebox-mcp",
-      "env": { "VOICEBOX_CLIENT_ID": "claude-code" }
+    "voiceit": {
+      "command": "/Applications/VoiceIt.app/Contents/MacOS/voiceit-mcp",
+      "env": { "VOICEIT_CLIENT_ID": "claude-code" }
     }
   }
 }
@@ -39,25 +39,25 @@ Fallback — stdio shim (when the client doesn't speak HTTP MCP). The
 Claude Code one-liner:
 
 ```
-claude mcp add voicebox \
+claude mcp add voiceit \
   --transport http \
   --url http://127.0.0.1:17493/mcp \
-  --header "X-Voicebox-Client-Id: claude-code"
+  --header "X-VoiceIt-Client-Id: claude-code"
 ```
 
 ## Tools
 
 | Name | Purpose |
 |---|---|
-| `voicebox.speak`          | Speak text in a voice profile. Returns a generation id you can poll. |
-| `voicebox.transcribe`     | Whisper transcription of a base64 blob or an absolute local path. |
-| `voicebox.list_captures`  | Recent captures (dictation / recording / file) with transcripts. |
-| `voicebox.list_profiles`  | Available voice profiles (cloned + preset). |
+| `voiceit.speak`          | Speak text in a voice profile. Returns a generation id you can poll. |
+| `voiceit.transcribe`     | Whisper transcription of a base64 blob or an absolute local path. |
+| `voiceit.list_captures`  | Recent captures (dictation / recording / file) with transcripts. |
+| `voiceit.list_profiles`  | Available voice profiles (cloned + preset). |
 
 All tools resolve voice profiles in this precedence:
 
 1. Explicit `profile` arg (name or id — case-insensitive)
-2. Per-client binding keyed by `X-Voicebox-Client-Id`
+2. Per-client binding keyed by `X-VoiceIt-Client-Id`
 3. `capture_settings.default_playback_voice_id` (global default)
 
 Bindings are managed via `GET|PUT /mcp/bindings` or in the app under
@@ -69,8 +69,8 @@ Settings → MCP.
 npx @modelcontextprotocol/inspector http://127.0.0.1:17493/mcp
 ```
 
-Point it at the URL, hit "List tools," call `voicebox.list_profiles`
-first to confirm wiring, then `voicebox.speak` for end-to-end.
+Point it at the URL, hit "List tools," call `voiceit.list_profiles`
+first to confirm wiring, then `voiceit.speak` for end-to-end.
 
 ## Non-MCP REST surface
 
@@ -80,7 +80,7 @@ don't speak MCP (shell scripts, ACP, A2A):
 ```
 curl -X POST http://127.0.0.1:17493/speak \
   -H 'Content-Type: application/json' \
-  -H 'X-Voicebox-Client-Id: claude-code' \
+  -H 'X-VoiceIt-Client-Id: claude-code' \
   -d '{"text":"Build complete.","profile":"Morgan"}'
 ```
 

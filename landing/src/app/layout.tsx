@@ -2,8 +2,8 @@ import type { Metadata } from 'next';
 import './globals.css';
 
 export const metadata: Metadata = {
-  metadataBase: new URL('https://voicebox.sh'),
-  title: 'Voicebox - Open Source Voice Cloning Desktop App',
+  metadataBase: new URL('https://voiceit.sh'),
+  title: 'VoiceIt - Open Source Voice Cloning Desktop App',
   description:
     'Near-perfect voice cloning with multiple TTS engines. Desktop app for Mac, Windows, and Linux. Multi-sample support, smart caching, local or remote inference.',
   keywords: [
@@ -23,15 +23,15 @@ export const metadata: Metadata = {
     apple: [{ url: '/apple-touch-icon.png', sizes: '180x180', type: 'image/png' }],
   },
   openGraph: {
-    title: 'Voicebox',
+    title: 'VoiceIt',
     description: 'Open source voice cloning. Local-first. Free forever.',
     type: 'website',
-    url: 'https://voicebox.sh',
+    url: 'https://voiceit.sh',
     images: [{ url: '/og.webp', width: 1200, height: 630 }],
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'Voicebox',
+    title: 'VoiceIt',
     description: 'Open source voice cloning. Local-first. Free forever.',
     images: ['/og.webp'],
   },

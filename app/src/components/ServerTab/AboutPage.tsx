@@ -2,7 +2,7 @@ import { ArrowUpRight } from 'lucide-react';
 import type { CSSProperties, ReactNode } from 'react';
 import { useEffect, useState } from 'react';
 import { Trans, useTranslation } from 'react-i18next';
-import voiceboxLogo from '@/assets/voicebox-logo.png';
+import voiceitLogo from '@/assets/voiceit-logo.png';
 import { getAccelerationInfo } from '@/lib/acceleration';
 import { useServerHealth } from '@/lib/hooks/useServer';
 import { SPONSORS } from '@/lib/sponsors';
@@ -57,12 +57,12 @@ export function AboutPage() {
       <div className="max-w-md mx-auto h-full flex items-center">
         <div className="flex flex-col items-center text-center space-y-5">
           <FadeIn delay={0}>
-            <img src={voiceboxLogo} alt="Voicebox" className="w-20 h-20 object-contain" />
+            <img src={voiceitLogo} alt="VoiceIt" className="w-20 h-20 object-contain" />
           </FadeIn>
 
           <FadeIn delay={80}>
             <div className="space-y-1.5">
-              <h1 className="text-lg font-semibold">Voicebox</h1>
+              <h1 className="text-lg font-semibold">VoiceIt</h1>
               <p className="text-xs text-muted-foreground/60 h-4">
                 {version ? `v${version}` : '\u00A0'}
               </p>

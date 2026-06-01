@@ -6,7 +6,7 @@ set -e
 # Determine platform
 PLATFORM=$(rustc --print host-tuple 2>/dev/null || echo "unknown")
 
-echo "Building Voicebox sidecars for platform: $PLATFORM"
+echo "Building VoiceIt sidecars for platform: $PLATFORM"
 
 # Build Python binary
 # Resolve PATH to absolute paths before changing directory
@@ -39,9 +39,9 @@ copy_sidecar() {
 }
 
 python build_binary.py
-copy_sidecar voicebox-server
+copy_sidecar voiceit-server
 
 python build_binary.py --shim
-copy_sidecar voicebox-mcp
+copy_sidecar voiceit-mcp
 
 echo "Build complete!"

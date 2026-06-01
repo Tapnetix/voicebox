@@ -65,7 +65,7 @@ export default function SponsorsPage() {
             className="fade-in mx-auto mt-6 max-w-2xl text-lg text-muted-foreground md:text-xl"
             style={{ animationDelay: '200ms' }}
           >
-            Voicebox is the open-source AI voice studio used by creators, podcasters, voice
+            VoiceIt is the open-source AI voice studio used by creators, podcasters, voice
             artists, writers, developers, accessibility users, and curious humans all over the
             world. Sponsor the project, get your logo in front of all of them.
           </p>
@@ -117,7 +117,7 @@ export default function SponsorsPage() {
             <Stat
               value="170k+"
               label="Monthly site visitors"
-              note="voicebox.sh, last 30 days · growing 5×"
+              note="voiceit.sh, last 30 days · growing 5×"
             />
             <Stat
               value="Millions"
@@ -127,7 +127,7 @@ export default function SponsorsPage() {
           </div>
 
           <p className="text-center text-sm text-muted-foreground mt-10 max-w-2xl mx-auto">
-            Voicebox users are content creators, podcasters, voice artists, writers, developers,
+            VoiceIt users are content creators, podcasters, voice artists, writers, developers,
             accessibility users, hobbyists, and AI enthusiasts. They picked a local-first tool
             over a cloud subscription — they care about owning their software and the brands
             behind it.
@@ -152,7 +152,7 @@ export default function SponsorsPage() {
               Headline placement
             </div>
             <h3 className="text-xl md:text-2xl font-semibold tracking-tight text-foreground mb-2">
-              voicebox.sh — directly below the hero.
+              voiceit.sh — directly below the hero.
             </h3>
             <p className="text-sm md:text-base text-muted-foreground leading-relaxed max-w-2xl mb-8">
               Your logo lives in the prime slot on the homepage — the first thing every visitor
@@ -194,7 +194,7 @@ export default function SponsorsPage() {
             />
             <Perk
               title="Release notes"
-              body="One-line acknowledgement in the next major release post — read by the long tail of users who follow Voicebox updates."
+              body="One-line acknowledgement in the next major release post — read by the long tail of users who follow VoiceIt updates."
             />
           </div>
         </div>
@@ -222,7 +222,7 @@ export default function SponsorsPage() {
             </p>
 
             <ul className="space-y-3 mb-8">
-              <PerkRow text="Logo on voicebox.sh — directly below the hero" />
+              <PerkRow text="Logo on voiceit.sh — directly below the hero" />
               <PerkRow text="Logo in the GitHub README sponsors section" />
               <PerkRow text="Featured card on /sponsors with your tagline and link" />
               <PerkRow text="Acknowledgement in the next major release post" />
@@ -235,7 +235,7 @@ export default function SponsorsPage() {
               rel="noopener noreferrer"
               className="flex items-center justify-center gap-2 w-full rounded-full bg-accent px-6 py-3.5 text-sm font-semibold uppercase tracking-wider text-white shadow-[0_4px_20px_hsl(43_60%_50%/0.3),inset_0_2px_0_rgba(255,255,255,0.2),inset_0_-2px_0_rgba(0,0,0,0.1)] transition-all hover:bg-accent-faint"
             >
-              Sponsor Voicebox
+              Sponsor VoiceIt
               <ArrowRight className="h-4 w-4" />
             </a>
 
@@ -261,7 +261,7 @@ export default function SponsorsPage() {
               <h3 className="text-[15px] font-semibold text-foreground">Not a company?</h3>
             </div>
             <p className="text-sm leading-relaxed text-muted-foreground mb-4">
-              Individual supporters keep Voicebox running too. Drop a tip on Buy Me a Coffee and
+              Individual supporters keep VoiceIt running too. Drop a tip on Buy Me a Coffee and
               your name shows up in the supporters list.
             </p>
             <a
@@ -280,7 +280,7 @@ export default function SponsorsPage() {
               Who we accept
             </h3>
             <p className="text-sm leading-relaxed text-muted-foreground">
-              Voicebox is local-first and privacy-first. We don't accept sponsorships from
+              VoiceIt is local-first and privacy-first. We don't accept sponsorships from
               companies whose business model conflicts with that — voice-data brokers, ad-tech
               built on speech, or surveillance vendors. Everyone else is welcome.
             </p>

@@ -52,7 +52,7 @@ The two cloud incumbents sit on opposite halves of the voice I/O loop — Eleven
 - **Audiobooks** — import an EPUB/text, auto-detect characters and dialogue with a local LLM, cast a distinct voice per character, and narrate the whole book
 - **Stories editor** — multi-track timeline for conversations, podcasts, and narratives
 - **Voice input** — global dictation hotkey with push-to-talk and toggle modes, accessibility-verified auto-paste on macOS, in-app mic on every text field, Whisper-based STT
-- **Agent voice output** — one tool call (`voicebox.speak`) and any MCP-aware agent (Claude Code, Cursor, Cline) speaks to you in a voice you've cloned
+- **Agent voice output** — one tool call (`voiceit.speak`) and any MCP-aware agent (Claude Code, Cursor, Cline) speaks to you in a voice you've cloned
 - **Voice personalities** — attach a free-form persona to any voice profile, then Compose, Rewrite, or Respond via a bundled local LLM — agents can invoke the same modes over MCP
 - **API-first** — REST API plus a built-in MCP server for integrating voice I/O into your own apps and agents
 - **Native performance** — built with Tauri (Rust), not Electron
@@ -206,7 +206,7 @@ Every agent gets a voice. One tool call and any MCP-aware agent can speak to you
 
 ```ts
 // In any MCP-aware agent:
-await voicebox.speak({
+await voiceit.speak({
   text: "Deploy complete.",
   profile: "Morgan",
 });
@@ -217,7 +217,7 @@ Also exposed as `POST /speak` for anything that doesn't speak MCP — ACP, A2A, 
 - **Bidirectional pill** — `recording`, `transcribing`, `refining`, and `speaking` are all states of the same OS-level overlay, so dictation and agent speech share one surface
 - **Per-agent voice binding** — in **Settings → MCP**, pin Claude Code to Morgan and Cursor to Scarlett so you can tell which agent is talking without looking. Each client's `last_seen_at` timestamp confirms the install actually took
 - **Always visible** — no silent background TTS; every agent-initiated speak surfaces the pill with the voice profile name for the full duration
-- **HTTP + stdio transports** — install as a URL in Claude Code / Cursor / Windsurf / VS Code MCP, or point stdio-only clients at the bundled `voicebox-mcp` binary
+- **HTTP + stdio transports** — install as a URL in Claude Code / Cursor / Windsurf / VS Code MCP, or point stdio-only clients at the bundled `voiceit-mcp` binary
 
 ### Voice Personalities
 
@@ -226,7 +226,7 @@ Attach a free-form personality to any voice profile — who this voice is, how t
 - **Compose** — a shuffle button that drops a fresh in-character line into the textarea; edit and speak, or click again for a different take
 - **Speak in character** — a toggle that routes your input text through the personality LLM to be rewritten in their voice before TTS
 
-Agents can reach the same rewrite path over MCP by passing `personality: true` to `voicebox.speak`, turning the tool into a text-in → personality-LLM → TTS pipeline. The same LLM backs dictation's refinement step — one LLM in the app, one model cache, one GPU-memory footprint.
+Agents can reach the same rewrite path over MCP by passing `personality: true` to `voiceit.speak`, turning the tool into a text-in → personality-LLM → TTS pipeline. The same LLM backs dictation's refinement step — one LLM in the app, one model cache, one GPU-memory footprint.
 
 **Local LLM options:** Qwen3 0.6B / 1.7B / 4B, sharing the TTS runtime (MLX on Apple Silicon, PyTorch elsewhere).
 
@@ -235,7 +235,7 @@ Use cases: agent dev loops (dictate a question, hear the answer in a cloned voic
 ### Model Management
 
 - Per-model unload to free GPU memory without deleting downloads
-- Custom models directory via `VOICEBOX_MODELS_DIR`
+- Custom models directory via `VOICEIT_MODELS_DIR`
 - Model folder migration with progress tracking
 - Download cancel/clear UI
 
@@ -283,7 +283,7 @@ curl -X POST http://127.0.0.1:17493/generate \
 # Agent voice output — any app or script can speak in a cloned voice
 curl -X POST http://127.0.0.1:17493/speak \
   -H "Content-Type: application/json" \
-  -H "X-Voicebox-Client-Id: my-script" \
+  -H "X-VoiceIt-Client-Id: my-script" \
   -d '{"text": "Deploy complete.", "profile": "Morgan"}'
 
 # Transcribe an audio file
@@ -304,10 +304,10 @@ VoiceIt ships a built-in **Model Context Protocol** server so any MCP-aware agen
 **Claude Code one-liner:**
 
 ```
-claude mcp add voicebox \
+claude mcp add voiceit \
   --transport http \
   --url http://127.0.0.1:17493/mcp \
-  --header "X-Voicebox-Client-Id: claude-code"
+  --header "X-VoiceIt-Client-Id: claude-code"
 ```
 
 **Any HTTP MCP client** (Cursor, Windsurf, VS Code, etc.):
@@ -315,32 +315,32 @@ claude mcp add voicebox \
 ```json
 {
   "mcpServers": {
-    "voicebox": {
+    "voiceit": {
       "url": "http://127.0.0.1:17493/mcp",
-      "headers": { "X-Voicebox-Client-Id": "cursor" }
+      "headers": { "X-VoiceIt-Client-Id": "cursor" }
     }
   }
 }
 ```
 
-**Stdio fallback** for clients that don't speak HTTP MCP — point at the bundled `voicebox-mcp` binary inside the app:
+**Stdio fallback** for clients that don't speak HTTP MCP — point at the bundled `voiceit-mcp` binary inside the app:
 
 ```json
 {
   "mcpServers": {
-    "voicebox": {
-      "command": "/Applications/Voicebox.app/Contents/MacOS/voicebox-mcp",
-      "env": { "VOICEBOX_CLIENT_ID": "claude-desktop" }
+    "voiceit": {
+      "command": "/Applications/VoiceIt.app/Contents/MacOS/voiceit-mcp",
+      "env": { "VOICEIT_CLIENT_ID": "claude-desktop" }
     }
   }
 }
 ```
 
-Four tools ship: `voicebox.speak`, `voicebox.transcribe`, `voicebox.list_captures`, `voicebox.list_profiles`. Per-client voice bindings are managed in **VoiceIt → Settings → MCP**. See the [full MCP guide](docs/content/docs/overview/mcp-server.mdx) for tool signatures, resolution precedence, the speaking-pill contract, and security notes.
+Four tools ship: `voiceit.speak`, `voiceit.transcribe`, `voiceit.list_captures`, `voiceit.list_profiles`. Per-client voice bindings are managed in **VoiceIt → Settings → MCP**. See the [full MCP guide](docs/content/docs/overview/mcp-server.mdx) for tool signatures, resolution precedence, the speaking-pill contract, and security notes.
 
 ```ts
 // In any MCP-aware agent:
-await voicebox.speak({
+await voiceit.speak({
   text: "Tests passing. Ready to merge.",
   profile: "Morgan",      // optional — falls back to the per-client binding
   personality: true,      // optional — rewrites text through the profile's personality LLM first
@@ -428,7 +428,7 @@ The guide is optimized for AI coding agents. An [agent skill](.agents/skills/add
 ### Project Structure
 
 ```
-voicebox/
+voiceit/
 ├── app/              # Shared React frontend
 ├── tauri/            # Desktop app (Tauri + Rust)
 ├── web/              # Web deployment

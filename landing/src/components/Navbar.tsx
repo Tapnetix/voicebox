@@ -36,13 +36,13 @@ export function Navbar() {
         {/* Logo + wordmark */}
         <a href="/" className="flex items-center gap-2.5 justify-self-start">
           <Image
-            src="/voicebox-logo-app.webp"
-            alt="Voicebox"
+            src="/voiceit-logo-app.webp"
+            alt="VoiceIt"
             width={28}
             height={28}
             className="h-7 w-7"
           />
-          <span className="text-[15px] font-semibold text-foreground">Voicebox</span>
+          <span className="text-[15px] font-semibold text-foreground">VoiceIt</span>
         </a>
 
         {/* Nav links - centered */}
@@ -87,7 +87,7 @@ export function Navbar() {
             Download
           </a>
           <a
-            href="https://docs.voicebox.sh"
+            href="https://docs.voiceit.sh"
             target="_blank"
             rel="noopener noreferrer"
             className="rounded-md px-3 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"

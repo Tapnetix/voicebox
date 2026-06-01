@@ -1,5 +1,5 @@
 """
-Configuration module for voicebox backend.
+Configuration module for voiceit backend.
 
 Handles data directory configuration for production bundling.
 """
@@ -11,9 +11,9 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 # Allow users to override the HuggingFace model download directory.
-# Set VOICEBOX_MODELS_DIR to an absolute path before starting the server.
+# Set VOICEIT_MODELS_DIR to an absolute path before starting the server.
 # This sets HF_HUB_CACHE so all huggingface_hub downloads go to that path.
-_custom_models_dir = os.environ.get("VOICEBOX_MODELS_DIR")
+_custom_models_dir = os.environ.get("VOICEIT_MODELS_DIR")
 if _custom_models_dir:
     os.environ["HF_HUB_CACHE"] = _custom_models_dir
     logger.info("Model download path set to: %s", _custom_models_dir)
@@ -102,7 +102,7 @@ def resolve_storage_path(path: str | Path | None) -> Path | None:
 
 def get_db_path() -> Path:
     """Get database file path."""
-    return _data_dir / "voicebox.db"
+    return _data_dir / "voiceit.db"
 
 
 def get_profiles_dir() -> Path:

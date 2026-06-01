@@ -2,7 +2,7 @@
  * C6 E2E spec — Ingest and parse EPUB/FB2/TXT/PDF (owns scenario S1).
  *
  * PREREQUISITES:
- *   - A live Voicebox backend must be running (the web build calls POST /books/import).
+ *   - A live VoiceIt backend must be running (the web build calls POST /books/import).
  *   - The web dev server is started by `just dev-web` (playwright.config.ts webServer).
  *   - The /books route is not wired into the web build until C16; this spec
  *     will go green at the orchestrator's phase-end live E2E gate, not during

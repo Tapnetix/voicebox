@@ -103,7 +103,7 @@ def client(engine_and_session, tmp_path, monkeypatch):
             db.close()
 
     # Point the data dir at tmp_path so cover files go somewhere writable
-    monkeypatch.setenv("VOICEBOX_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("VOICEIT_DATA_DIR", str(tmp_path))
     import backend.config as _cfg
     _cfg._data_dir = tmp_path
 

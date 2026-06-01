@@ -1,4 +1,4 @@
-// Voicebox cross-platform desktop build.
+// VoiceIt cross-platform desktop build.
 //
 // Builds the Tauri desktop app + bundled Python server sidecar and archives the
 // platform installers (Linux .deb, macOS .dmg, Windows NSIS .exe). The bundles
@@ -56,7 +56,7 @@ pipeline {
                             # The default (CPU) sidecar must NOT ship the ~2.7GB CUDA/NVIDIA
                             # libs that plain `torch` pulls on Linux (torch x.y+cuNNN). Swap to
                             # CPU torch + drop orphaned nvidia-* wheels so the .deb is ~0.5GB
-                            # not 2.5GB. (CUDA users get the separate voicebox-server-cuda.)
+                            # not 2.5GB. (CUDA users get the separate voiceit-server-cuda.)
                             backend/venv/bin/pip install --index-url https://download.pytorch.org/whl/cpu --force-reinstall torch torchaudio
                             backend/venv/bin/pip freeze | grep -iE '^nvidia[-_]' | cut -d'=' -f1 | xargs -r backend/venv/bin/pip uninstall -y || true
                             just build-server
@@ -175,9 +175,9 @@ pipeline {
                             python backend\\build_binary.py || exit /b 1
                             for /f "delims=" %%i in ('rustc --print host-tuple') do set "TRIPLE=%%i"
                             if not exist tauri\\src-tauri\\binaries mkdir tauri\\src-tauri\\binaries
-                            copy /Y backend\\dist\\voicebox-server.exe "tauri\\src-tauri\\binaries\\voicebox-server-%TRIPLE%.exe" || exit /b 1
+                            copy /Y backend\\dist\\voiceit-server.exe "tauri\\src-tauri\\binaries\\voiceit-server-%TRIPLE%.exe" || exit /b 1
                             python backend\\build_binary.py --shim || exit /b 1
-                            copy /Y backend\\dist\\voicebox-mcp.exe "tauri\\src-tauri\\binaries\\voicebox-mcp-%TRIPLE%.exe" || exit /b 1
+                            copy /Y backend\\dist\\voiceit-mcp.exe "tauri\\src-tauri\\binaries\\voiceit-mcp-%TRIPLE%.exe" || exit /b 1
 
                             cd tauri || exit /b 1
                             call bun run tauri build --bundles nsis || exit /b 1
@@ -198,7 +198,7 @@ pipeline {
     }
 
     post {
-        success { echo 'Voicebox desktop bundles built (Linux .deb, macOS .dmg, Windows NSIS).' }
+        success { echo 'VoiceIt desktop bundles built (Linux .deb, macOS .dmg, Windows NSIS).' }
         failure { echo 'Build failed — see the per-platform stage logs above.' }
     }
 }

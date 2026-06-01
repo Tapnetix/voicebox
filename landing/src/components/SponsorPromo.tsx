@@ -17,13 +17,13 @@ function SponsorPromoEmpty() {
             <div>
               <div className="inline-flex items-center gap-2 mb-4 text-[11px] font-semibold uppercase tracking-[0.22em] text-accent">
                 <Heart className="h-3.5 w-3.5" />
-                Sponsor Voicebox
+                Sponsor VoiceIt
               </div>
               <h3 className="text-2xl md:text-3xl font-semibold tracking-tight text-foreground mb-3">
                 Get your logo in front of 170k+ monthly visitors.
               </h3>
               <p className="text-sm md:text-base text-muted-foreground leading-relaxed max-w-2xl">
-                Voicebox is open-source and used by creators, voice artists, podcasters,
+                VoiceIt is open-source and used by creators, voice artists, podcasters,
                 writers, developers, accessibility users, and curious humans all over the world.
                 Sponsor the project and your logo lands on the homepage, in the app, in the
                 README, and on the sponsors page — in front of every one of them.

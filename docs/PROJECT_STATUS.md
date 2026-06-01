@@ -1,4 +1,4 @@
-# Voicebox Project Status & Roadmap
+# VoiceIt Project Status & Roadmap
 
 > Last updated: 2026-04-18 | Current version: **v0.4.1** | 232 open issues | 12 open PRs
 
@@ -149,7 +149,7 @@ POST /generate
 | Model | PR / Branch | Reason |
 |-------|-------------|--------|
 | **CosyVoice2/3** | PR #311 | Output quality too poor. Heavy deps, no PyPI, needed 5+ shims. PR should be closed. |
-| **VoxCPM 1.5 / VoxCPM2** | `voicebox-new-models` research (2026-04-18) | **Backlogged.** See detailed analysis below. |
+| **VoxCPM 1.5 / VoxCPM2** | `voiceit-new-models` research (2026-04-18) | **Backlogged.** See detailed analysis below. |
 
 #### VoxCPM — Evaluation Notes (2026-04-18)
 
@@ -169,7 +169,7 @@ POST /generate
   - **CPU unsupported in the Python package** — issue #256 shows `voxcpm --device cpu` rejected with `unrecognized arguments`. The only CPU path is the third-party **VoxCPM.cpp** GGML engine, which is a separate ecosystem project, not `pip install voxcpm`.
   - **macOS source install fails** — issue #233 open with no resolution.
 - Would require CUDA-only gating in UI (new `requires_cuda` flag on `ModelConfig`, lock icon + "Requires NVIDIA GPU" in `ModelManagement.tsx` / `EngineModelSelector.tsx`) plus a hard error at `load_model()` as safety net. Doable but adds first-class platform gating that doesn't exist for any other engine today.
-- Voicebox's user base skews Apple Silicon (MLX is a primary backend). Shipping a CUDA-only model sets a precedent worth a separate scoping discussion (see issues #419 engine sprawl, #420 platform tiers, PR #465).
+- VoiceIt's user base skews Apple Silicon (MLX is a primary backend). Shipping a CUDA-only model sets a precedent worth a separate scoping discussion (see issues #419 engine sprawl, #420 platform tiers, PR #465).
 
 **What would change the decision:**
 - Upstream fixes MPS crashes (watch issues #232, #248).
@@ -186,7 +186,7 @@ POST /generate
 | Engine sprawl cleanup | issue #419 | First-class vs experimental TTS backends distinction |
 | Frontend tech-debt burn-down | issue #421 | Biome + a11y debt before gating CI |
 | Docker registry auto-publish | PR #463, issue #453 | ghcr.io image on tag push |
-| New model research | `voicebox-new-models` branch | Evaluating Fish Speech, XTTS-v2, Pocket TTS, VibeVoice, Fish Audio S2, index-tts2 |
+| New model research | `voiceit-new-models` branch | Evaluating Fish Speech, XTTS-v2, Pocket TTS, VibeVoice, Fish Audio S2, index-tts2 |
 
 ### TTS Engine Comparison
 
@@ -411,7 +411,7 @@ Notable:
 | macOS | #441 (older macOS), #369 (malware flag), #334 (microphone permission), #287 (`check_model_inputs` ImportError — regression), #171 (ARM64 binary won't open) |
 | Profile/UI | #360 (Kokoro profile hides others — partly addressed by auto-switch), #299 (drag-drop on Win11), #329 (size selector state bug), #393 (stuck loading screen after reinstall to new dir) |
 | Integrations | #397 (SAMMI-bot 422 Unprocessable Entity) |
-| Audio playback / session | **#41** (macOS: Voicebox goes silent after another app takes audio output; restart restores it) — see deep-dive below |
+| Audio playback / session | **#41** (macOS: VoiceIt goes silent after another app takes audio output; restart restores it) — see deep-dive below |
 | Database | #174 (sqlite3 IntegrityError) |
 
 ---
@@ -580,8 +580,8 @@ Seven TTS engines shipped, more candidates queued. Issue #419 asks for a first-c
 
 | Branch | PR | Status | Notes |
 |--------|-----|--------|-------|
-| `voicebox-new-models` | — | **Active** | New model research (Fish Speech, Pocket TTS, VibeVoice, etc.); VoxCPM evaluated & backlogged |
-| `fix/kokoro-pyinstaller-source-files` | — | Active | Kokoro frozen-build source bundling (parent of `voicebox-new-models`) |
+| `voiceit-new-models` | — | **Active** | New model research (Fish Speech, Pocket TTS, VibeVoice, etc.); VoxCPM evaluated & backlogged |
+| `fix/kokoro-pyinstaller-source-files` | — | Active | Kokoro frozen-build source bundling (parent of `voiceit-new-models`) |
 | `feat/cosyvoice-engine` | #311 | Open — closing | CosyVoice2/3 — abandoned, poor quality |
 | `feat/kokoro` | #325 | **Merged** | Kokoro 82M + voice profile type system |
 | `feat/qwen-custom-voice` | #328 | **Merged** | Qwen CustomVoice preset engine |

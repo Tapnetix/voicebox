@@ -31,7 +31,7 @@ We will:
 
 ### For Users
 
-- **Keep Voicebox updated** - Updates include security patches
+- **Keep VoiceIt updated** - Updates include security patches
 - **Verify downloads** - Only download from official releases
 - **Local processing** - Voice data stays on your machine
 - **Network security** - Use HTTPS when connecting to remote servers
@@ -47,7 +47,7 @@ We will:
 
 ### Local Processing
 
-Voicebox processes all audio locally by default. Your voice data never leaves your machine unless you explicitly enable remote server mode.
+VoiceIt processes all audio locally by default. Your voice data never leaves your machine unless you explicitly enable remote server mode.
 
 ### Remote Server Mode
 
@@ -89,4 +89,4 @@ Security updates will be:
 
 ---
 
-Thank you for helping keep Voicebox secure! 🔒
+Thank you for helping keep VoiceIt secure! 🔒

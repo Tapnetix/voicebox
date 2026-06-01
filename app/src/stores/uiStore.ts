@@ -96,7 +96,7 @@ export const useUIStore = create<UIStore>()(
       },
     }),
     {
-      name: 'voicebox-ui',
+      name: 'voiceit-ui',
       partialize: (state) => ({
         selectedProfileId: state.selectedProfileId,
         theme: state.theme,

@@ -39,7 +39,7 @@ _DEFAULT_MODEL_SIZE = "default"
 def compose_instruct(segment) -> Optional[str]:
     """Fold emotion + emotion_intensity + delivery into a single instruct string.
 
-    This mirrors how Voicebox's existing generation composes instruct/emotion
+    This mirrors how VoiceIt's existing generation composes instruct/emotion
     so the TTS engine receives a consistent prompt regardless of whether audio
     is triggered manually or from the book pipeline.
 

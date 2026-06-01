@@ -1,9 +1,9 @@
 ---
 title: "Documentation README"
-description: "Voicebox documentation development guide"
+description: "VoiceIt documentation development guide"
 ---
 
-This directory contains the documentation for Voicebox, built with [Fumadocs](https://fumadocs.dev).
+This directory contains the documentation for VoiceIt, built with [Fumadocs](https://fumadocs.dev).
 
 ## Development
 

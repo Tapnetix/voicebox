@@ -1,4 +1,4 @@
-"""ORM model definitions for the voicebox SQLite database."""
+"""ORM model definitions for the voiceit SQLite database."""
 
 from datetime import datetime
 import uuid
@@ -212,7 +212,7 @@ class CaptureSettings(Base):
     # Default OFF — opting in is what triggers the macOS Input Monitoring TCC
     # prompt. We deliberately don't spawn the global keyboard tap until the
     # user flips this on so a fresh-install user doesn't see a scary
-    # "Voicebox would like to receive keystrokes from any application" dialog
+    # "VoiceIt would like to receive keystrokes from any application" dialog
     # before they've even opened the Captures tab.
     hotkey_enabled = Column(Boolean, nullable=False, default=False)
     # Lists of keytap key names (e.g. "MetaRight", "ControlRight"). Right-hand
@@ -244,9 +244,9 @@ class MCPClientBinding(Base):
 
     Lets users bind distinct voices to distinct agents — e.g. Claude Code
     speaks in "Morgan," Cursor in "Scarlett." The MCP client identifies
-    itself via the ``X-Voicebox-Client-Id`` HTTP header; direct-HTTP
+    itself via the ``X-VoiceIt-Client-Id`` HTTP header; direct-HTTP
     clients set it in their MCP config's ``headers`` block, the stdio
-    shim forwards it from the ``VOICEBOX_CLIENT_ID`` env var.
+    shim forwards it from the ``VOICEIT_CLIENT_ID`` env var.
     """
 
     __tablename__ = "mcp_client_bindings"
@@ -255,7 +255,7 @@ class MCPClientBinding(Base):
     label = Column(String, nullable=True)  # display name
     profile_id = Column(String, ForeignKey("profiles.id"), nullable=True)
     default_engine = Column(String, nullable=True)
-    # When true, voicebox.speak routes through the profile's personality LLM
+    # When true, voiceit.speak routes through the profile's personality LLM
     # (rewrite) before TTS by default. Callers can still override per call.
     default_personality = Column(Boolean, nullable=False, default=False)
     last_seen_at = Column(DateTime, nullable=True)

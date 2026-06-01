@@ -82,7 +82,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name='voicebox-server',
+    name='voiceit-server',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

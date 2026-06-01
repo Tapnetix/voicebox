@@ -1,13 +1,13 @@
-"""voicebox-mcp — stdio ↔ Streamable-HTTP MCP proxy.
+"""voiceit-mcp — stdio ↔ Streamable-HTTP MCP proxy.
 
 Some MCP clients only speak stdio. They spawn this binary, we pipe each
 JSON-RPC message to ``http://127.0.0.1:<port>/mcp/``, and stream the
-server's response back. The Voicebox server does all the real work.
+server's response back. The VoiceIt server does all the real work.
 
 Environment variables:
-  VOICEBOX_PORT       Voicebox server port (default 17493).
-  VOICEBOX_HOST       Host (default 127.0.0.1).
-  VOICEBOX_CLIENT_ID  Forwarded as X-Voicebox-Client-Id on every request.
+  VOICEIT_PORT       VoiceIt server port (default 17493).
+  VOICEIT_HOST       Host (default 127.0.0.1).
+  VOICEIT_CLIENT_ID  Forwarded as X-VoiceIt-Client-Id on every request.
 
 Stdout is JSON-RPC only. Diagnostics go to stderr.
 Exit 0 on clean EOF, 1 on transport error, 2 if backend never answers.
@@ -24,19 +24,19 @@ from typing import Any
 import httpx
 
 
-CLIENT_ID_HEADER = "X-Voicebox-Client-Id"
+CLIENT_ID_HEADER = "X-VoiceIt-Client-Id"
 SESSION_HEADER = "mcp-session-id"
 HEALTH_TIMEOUT_S = 30.0
 DEFAULT_PORT = 17493
 
 
 def _err(msg: str) -> None:
-    print(f"voicebox-mcp: {msg}", file=sys.stderr, flush=True)
+    print(f"voiceit-mcp: {msg}", file=sys.stderr, flush=True)
 
 
 def _base_url() -> tuple[str, str]:
-    host = os.environ.get("VOICEBOX_HOST", "127.0.0.1")
-    port = int(os.environ.get("VOICEBOX_PORT", str(DEFAULT_PORT)))
+    host = os.environ.get("VOICEIT_HOST", "127.0.0.1")
+    port = int(os.environ.get("VOICEIT_PORT", str(DEFAULT_PORT)))
     return f"http://{host}:{port}/mcp/", f"http://{host}:{port}/health"
 
 
@@ -122,7 +122,7 @@ async def _handle_request(
                     "error": {
                         "code": -32000,
                         "message": (
-                            f"Voicebox MCP proxy got HTTP {response.status_code}"
+                            f"VoiceIt MCP proxy got HTTP {response.status_code}"
                         ),
                     },
                 }
@@ -155,7 +155,7 @@ async def _handle_request(
 async def _run() -> int:
     url, health_url = _base_url()
     forward_headers: dict[str, str] = {}
-    client_id = os.environ.get("VOICEBOX_CLIENT_ID")
+    client_id = os.environ.get("VOICEIT_CLIENT_ID")
     if client_id:
         forward_headers[CLIENT_ID_HEADER] = client_id
 
@@ -164,7 +164,7 @@ async def _run() -> int:
     async with httpx.AsyncClient(timeout=httpx.Timeout(300.0)) as client:
         if not await _wait_for_backend(client, health_url):
             _err(
-                f"timed out waiting for Voicebox at {health_url} — is the app open?"
+                f"timed out waiting for VoiceIt at {health_url} — is the app open?"
             )
             return 2
 

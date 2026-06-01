@@ -34,8 +34,8 @@ fn main() {
     // Compile macOS Liquid Glass icon
     #[cfg(target_os = "macos")]
     {
-        // voicebox.icon is in tauri/assets/voicebox.icon (one level up from src-tauri)
-        let icon_source = format!("{}/../assets/voicebox.icon", project_root);
+        // voiceit.icon is in tauri/assets/voiceit.icon (one level up from src-tauri)
+        let icon_source = format!("{}/../assets/voiceit.icon", project_root);
 
         if std::path::Path::new(&icon_source).exists() {
             println!("cargo:rerun-if-changed={}", icon_source);
@@ -53,7 +53,7 @@ fn main() {
                     "--output-partial-info-plist",
                     &partial_plist,
                     "--app-icon",
-                    "voicebox",
+                    "voiceit",
                     "--include-all-app-icons",
                     "--target-device",
                     "mac",
@@ -81,12 +81,12 @@ fn main() {
                 }
             }
 
-            // Generate voicebox.icns from the source PNG via sips + iconutil
-            let icns_path = format!("{}/voicebox.icns", gen_dir);
+            // Generate voiceit.icns from the source PNG via sips + iconutil
+            let icns_path = format!("{}/voiceit.icns", gen_dir);
             if !std::path::Path::new(&icns_path).exists() {
-                let source_png = format!("{}/Assets/Voicebox.png", icon_source);
+                let source_png = format!("{}/Assets/VoiceIt.png", icon_source);
                 if std::path::Path::new(&source_png).exists() {
-                    let iconset_dir = format!("{}/voicebox.iconset", gen_dir);
+                    let iconset_dir = format!("{}/voiceit.iconset", gen_dir);
                     std::fs::create_dir_all(&iconset_dir).ok();
 
                     let sizes: &[(u32, &str)] = &[
@@ -131,7 +131,7 @@ fn main() {
 
                     match iconutil_output {
                         Ok(out) if out.status.success() => {
-                            println!("Generated voicebox.icns");
+                            println!("Generated voiceit.icns");
                         }
                         Ok(out) => {
                             eprintln!("iconutil failed: {}", String::from_utf8_lossy(&out.stderr));
@@ -157,7 +157,7 @@ fn main() {
     // On non-macOS these are always stubs. On macOS, actool may not produce
     // Assets.car if the Xcode version doesn't support the .icon format.
     {
-        let required = ["Assets.car", "voicebox.icns", "partial.plist"];
+        let required = ["Assets.car", "voiceit.icns", "partial.plist"];
         for name in required {
             let path = format!("{}/{}", gen_dir, name);
             if !std::path::Path::new(&path).exists() {

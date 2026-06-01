@@ -5,7 +5,7 @@
 
 ## Overview
 
-Docker support makes Voicebox easier to deploy, especially for:
+Docker support makes VoiceIt easier to deploy, especially for:
 
 - **Consistent Environments**: Same setup across dev/staging/prod
 - **GPU Passthrough**: Easy NVIDIA/AMD GPU access
@@ -19,16 +19,16 @@ Docker support makes Voicebox easier to deploy, especially for:
 
 ```bash
 # CPU-only version
-docker run -p 8000:8000 -v voicebox-data:/app/data \
+docker run -p 8000:8000 -v voiceit-data:/app/data \
   ghcr.io/jamiepine/voicebox:latest
 
 # NVIDIA GPU version
-docker run --gpus all -p 8000:8000 -v voicebox-data:/app/data \
+docker run --gpus all -p 8000:8000 -v voiceit-data:/app/data \
   ghcr.io/jamiepine/voicebox:latest-cuda
 
 # AMD GPU version (experimental)
 docker run --device=/dev/kfd --device=/dev/dri -p 8000:8000 \
-  -v voicebox-data:/app/data \
+  -v voiceit-data:/app/data \
   ghcr.io/jamiepine/voicebox:latest-rocm
 ```
 
@@ -42,12 +42,12 @@ Create `docker-compose.yml`:
 version: '3.8'
 
 services:
-  voicebox:
+  voiceit:
     image: ghcr.io/jamiepine/voicebox:latest-cuda
     ports:
       - "8000:8000"
     volumes:
-      - voicebox-data:/app/data
+      - voiceit-data:/app/data
       - huggingface-cache:/root/.cache/huggingface
     environment:
       - GPU_MEMORY_FRACTION=0.8  # Use 80% of GPU memory
@@ -62,7 +62,7 @@ services:
               capabilities: [gpu]
 
 volumes:
-  voicebox-data:
+  voiceit-data:
   huggingface-cache:
 ```
 
@@ -108,8 +108,8 @@ CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000"]
 
 Build and run:
 ```bash
-docker build -t voicebox .
-docker run -p 8000:8000 -v $(pwd)/data:/app/data voicebox
+docker build -t voiceit .
+docker run -p 8000:8000 -v $(pwd)/data:/app/data voiceit
 ```
 
 ### Multi-Stage Build (Optimized)
@@ -160,7 +160,7 @@ CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000"]
 
 Build:
 ```bash
-docker build -f Dockerfile.optimized -t voicebox:slim .
+docker build -f Dockerfile.optimized -t voiceit:slim .
 ```
 
 ## GPU Support
@@ -195,15 +195,15 @@ CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000"]
 **Run with GPU:**
 ```bash
 docker run --gpus all -p 8000:8000 \
-  -v voicebox-data:/app/data \
-  voicebox:cuda
+  -v voiceit-data:/app/data \
+  voiceit:cuda
 ```
 
 **Docker Compose with GPU:**
 ```yaml
 services:
-  voicebox:
-    image: voicebox:cuda
+  voiceit:
+    image: voiceit:cuda
     deploy:
       resources:
         reservations:
@@ -249,8 +249,8 @@ CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000"]
 docker run --device=/dev/kfd --device=/dev/dri \
   --group-add video --ipc=host --cap-add=SYS_PTRACE \
   --security-opt seccomp=unconfined \
-  -p 8000:8000 -v voicebox-data:/app/data \
-  voicebox:rocm
+  -p 8000:8000 -v voiceit-data:/app/data \
+  voiceit:rocm
 ```
 
 **Note:** ROCm support varies by GPU model. Works best on Linux. See [AMD ROCm docs](https://rocm.docs.amd.com) for compatibility.
@@ -260,9 +260,9 @@ docker run --device=/dev/kfd --device=/dev/dri \
 ### Essential Volumes
 
 ```bash
-docker run -v voicebox-data:/app/data \           # Profiles, generations, history
+docker run -v voiceit-data:/app/data \           # Profiles, generations, history
            -v huggingface-cache:/root/.cache/huggingface \  # Downloaded models
-           -p 8000:8000 voicebox
+           -p 8000:8000 voiceit
 ```
 
 ### Development Volume Mounts
@@ -271,9 +271,9 @@ For development with hot-reload:
 
 ```bash
 docker run -v $(pwd)/backend:/app/backend \       # Live code changes
-           -v voicebox-data:/app/data \
+           -v voiceit-data:/app/data \
            -e RELOAD=true \
-           -p 8000:8000 voicebox
+           -p 8000:8000 voiceit
 ```
 
 ### Custom Model Storage
@@ -283,13 +283,13 @@ Use external model directory:
 ```bash
 docker run -v /path/to/models:/models \
            -e MODELS_DIR=/models \
-           -v voicebox-data:/app/data \
-           -p 8000:8000 voicebox
+           -v voiceit-data:/app/data \
+           -p 8000:8000 voiceit
 ```
 
 ## Environment Variables
 
-Configure Voicebox via environment variables:
+Configure VoiceIt via environment variables:
 
 ```bash
 docker run -e TTS_MODE=local \
@@ -297,7 +297,7 @@ docker run -e TTS_MODE=local \
            -e OPENAI_API_KEY=sk-... \
            -e GPU_MEMORY_FRACTION=0.8 \
            -e LOG_LEVEL=info \
-           -p 8000:8000 voicebox
+           -p 8000:8000 voiceit
 ```
 
 ### Available Variables
@@ -324,14 +324,14 @@ docker run -e TTS_MODE=local \
 version: '3.8'
 
 services:
-  voicebox:
+  voiceit:
     image: ghcr.io/jamiepine/voicebox:latest-cuda
-    container_name: voicebox
+    container_name: voiceit
     restart: unless-stopped
     ports:
       - "8000:8000"
     volumes:
-      - voicebox-data:/app/data
+      - voiceit-data:/app/data
       - huggingface-cache:/root/.cache/huggingface
     environment:
       - TTS_MODE=local
@@ -353,7 +353,7 @@ services:
       start_period: 40s
 
 volumes:
-  voicebox-data:
+  voiceit-data:
     driver: local
   huggingface-cache:
     driver: local
@@ -371,7 +371,7 @@ docker compose -f docker-compose.prod.yml up -d
 version: '3.8'
 
 services:
-  voicebox:
+  voiceit:
     build:
       context: .
       dockerfile: Dockerfile
@@ -379,7 +379,7 @@ services:
       - "8000:8000"
     volumes:
       - ./backend:/app/backend:ro
-      - voicebox-data:/app/data
+      - voiceit-data:/app/data
       - huggingface-cache:/root/.cache/huggingface
     environment:
       - RELOAD=true
@@ -388,7 +388,7 @@ services:
     command: uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
 
 volumes:
-  voicebox-data:
+  voiceit-data:
   huggingface-cache:
 ```
 
@@ -401,12 +401,12 @@ Full stack with reverse proxy and monitoring:
 version: '3.8'
 
 services:
-  # Main Voicebox app
-  voicebox:
+  # Main VoiceIt app
+  voiceit:
     image: ghcr.io/jamiepine/voicebox:latest-cuda
     restart: unless-stopped
     volumes:
-      - voicebox-data:/app/data
+      - voiceit-data:/app/data
       - huggingface-cache:/root/.cache/huggingface
     environment:
       - TTS_MODE=local
@@ -429,7 +429,7 @@ services:
       - ./nginx.conf:/etc/nginx/nginx.conf:ro
       - ./ssl:/etc/nginx/ssl:ro
     depends_on:
-      - voicebox
+      - voiceit
 
   # Prometheus monitoring (optional)
   prometheus:
@@ -441,7 +441,7 @@ services:
       - prometheus-data:/prometheus
 
 volumes:
-  voicebox-data:
+  voiceit-data:
   huggingface-cache:
   prometheus-data:
 ```
@@ -466,7 +466,7 @@ volumes:
 3. **Deploy:**
    ```bash
    docker run --gpus all -d -p 80:8000 \
-     -v voicebox-data:/app/data \
+     -v voiceit-data:/app/data \
      --restart unless-stopped \
      ghcr.io/jamiepine/voicebox:latest-cuda
    ```
@@ -477,7 +477,7 @@ Use GPU Droplet + Docker:
 
 ```bash
 # Create droplet via CLI
-doctl compute droplet create voicebox \
+doctl compute droplet create voiceit \
   --size gpu-h100x1-80gb \
   --image ubuntu-22-04-x64 \
   --region nyc3
@@ -486,19 +486,19 @@ doctl compute droplet create voicebox \
 ssh root@<droplet-ip>
 curl -fsSL https://get.docker.com -o get-docker.sh
 sh get-docker.sh
-docker run --gpus all -d -p 80:8000 voicebox:cuda
+docker run --gpus all -d -p 80:8000 voiceit:cuda
 ```
 
 ### Google Cloud Run (CPU-only)
 
 ```bash
 # Build and push
-docker build -t gcr.io/your-project/voicebox .
-docker push gcr.io/your-project/voicebox
+docker build -t gcr.io/your-project/voiceit .
+docker push gcr.io/your-project/voiceit
 
 # Deploy to Cloud Run
-gcloud run deploy voicebox \
-  --image gcr.io/your-project/voicebox \
+gcloud run deploy voiceit \
+  --image gcr.io/your-project/voiceit \
   --platform managed \
   --region us-central1 \
   --memory 4Gi \
@@ -510,7 +510,7 @@ gcloud run deploy voicebox \
 
 Create `fly.toml`:
 ```toml
-app = "voicebox"
+app = "voiceit"
 
 [build]
   image = "ghcr.io/jamiepine/voicebox:latest"
@@ -529,7 +529,7 @@ app = "voicebox"
     handlers = ["tls", "http"]
 
 [mounts]
-  source = "voicebox_data"
+  source = "voiceit_data"
   destination = "/app/data"
 ```
 
@@ -560,38 +560,38 @@ docker run --rm --device=/dev/kfd --device=/dev/dri rocm/dev-ubuntu-22.04:6.0 ro
 Container can't write to volumes:
 ```bash
 # Fix permissions
-docker run --user $(id -u):$(id -g) -v $(pwd)/data:/app/data voicebox
+docker run --user $(id -u):$(id -g) -v $(pwd)/data:/app/data voiceit
 ```
 
 ### Out of Memory
 
 Reduce GPU memory usage:
 ```bash
-docker run -e GPU_MEMORY_FRACTION=0.5 voicebox
+docker run -e GPU_MEMORY_FRACTION=0.5 voiceit
 ```
 
 Or use CPU-only:
 ```bash
-docker run -e DEVICE=cpu voicebox
+docker run -e DEVICE=cpu voiceit
 ```
 
 ### Model Download Fails
 
 Ensure HuggingFace cache is writable:
 ```bash
-docker run -v huggingface-cache:/root/.cache/huggingface voicebox
+docker run -v huggingface-cache:/root/.cache/huggingface voiceit
 ```
 
 Or use host cache:
 ```bash
-docker run -v ~/.cache/huggingface:/root/.cache/huggingface voicebox
+docker run -v ~/.cache/huggingface:/root/.cache/huggingface voiceit
 ```
 
 ### Port Already in Use
 
 Change host port:
 ```bash
-docker run -p 8080:8000 voicebox  # Use port 8080 instead
+docker run -p 8080:8000 voiceit  # Use port 8080 instead
 ```
 
 ## Security Best Practices
@@ -600,8 +600,8 @@ docker run -p 8080:8000 voicebox  # Use port 8080 instead
 
 Create non-root user in Dockerfile:
 ```dockerfile
-RUN useradd -m -u 1000 voicebox
-USER voicebox
+RUN useradd -m -u 1000 voiceit
+USER voiceit
 ```
 
 ### 2. Use Secrets for API Keys
@@ -615,7 +615,7 @@ echo "sk-your-key" | docker secret create openai_key -
 docker service create \
   --secret openai_key \
   -e OPENAI_API_KEY_FILE=/run/secrets/openai_key \
-  voicebox
+  voiceit
 ```
 
 ### 3. Network Isolation
@@ -624,7 +624,7 @@ Use internal networks for multi-container setups:
 
 ```yaml
 services:
-  voicebox:
+  voiceit:
     networks:
       - internal
   nginx:
@@ -646,7 +646,7 @@ Prevent resource exhaustion:
 
 ```yaml
 services:
-  voicebox:
+  voiceit:
     deploy:
       resources:
         limits:
@@ -663,10 +663,10 @@ services:
 
 ```bash
 # Use 80% of GPU (default 90%)
-docker run -e GPU_MEMORY_FRACTION=0.8 voicebox
+docker run -e GPU_MEMORY_FRACTION=0.8 voiceit
 
 # Allow GPU memory growth (prevents OOM)
-docker run -e TF_FORCE_GPU_ALLOW_GROWTH=true voicebox
+docker run -e TF_FORCE_GPU_ALLOW_GROWTH=true voiceit
 ```
 
 ### Model Caching
@@ -676,14 +676,14 @@ Pre-download models to volume:
 ```bash
 # Download models first
 docker run --rm -v huggingface-cache:/root/.cache/huggingface \
-  voicebox python -c "
+  voiceit python -c "
 from transformers import WhisperProcessor, WhisperForConditionalGeneration
 WhisperProcessor.from_pretrained('openai/whisper-base')
 WhisperForConditionalGeneration.from_pretrained('openai/whisper-base')
 "
 
 # Then run normally
-docker run -v huggingface-cache:/root/.cache/huggingface voicebox
+docker run -v huggingface-cache:/root/.cache/huggingface voiceit
 ```
 
 ### Multi-Worker Setup
@@ -728,10 +728,10 @@ Then scrape `/metrics` with Prometheus.
 
 View container logs:
 ```bash
-docker logs -f voicebox
+docker logs -f voiceit
 
 # Or with compose
-docker compose logs -f voicebox
+docker compose logs -f voiceit
 ```
 
 ## Next Steps
