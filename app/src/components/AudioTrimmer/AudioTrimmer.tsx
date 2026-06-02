@@ -1,4 +1,4 @@
-import { Repeat, RotateCcw, SkipBack, Play, Pause, Wand2, ChevronDown } from 'lucide-react';
+import { Repeat, SkipBack, Play, Pause, Wand2, ChevronDown } from 'lucide-react';
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import WaveSurfer from 'wavesurfer.js';
