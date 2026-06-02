@@ -1,3 +1,4 @@
+import '@/i18n';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 
@@ -21,6 +22,18 @@ vi.mock('@/lib/utils/audio', async (importOriginal) => {
   };
 });
 
+// Shared container so the vi.mock factory (which is hoisted) can write the instance
+// and tests (which run later) can read it. Using an object avoids the TDZ issue.
+const mockWs = {
+  instance: null as null | {
+    play: ReturnType<typeof vi.fn>;
+    setTime: ReturnType<typeof vi.fn>;
+    pause: ReturnType<typeof vi.fn>;
+    seekTo: ReturnType<typeof vi.fn>;
+    [key: string]: any;
+  },
+};
+
 // Minimal wavesurfer + regions mock — record handlers so tests can fire region updates.
 vi.mock('wavesurfer.js', () => {
   const handlers: Record<string, ((...a: any[]) => void)[]> = {};
@@ -32,7 +45,7 @@ vi.mock('wavesurfer.js', () => {
     load: vi.fn().mockResolvedValue(undefined),
     isPlaying: vi.fn(() => false),
   };
-  return { default: { create: vi.fn(() => ws) } };
+  return { default: { create: vi.fn(() => { mockWs.instance = ws; return ws; }) } };
 });
 vi.mock('wavesurfer.js/dist/plugins/regions.js', () => {
   const region = { start: 42, end: 62, setOptions: vi.fn(), on: vi.fn(), remove: vi.fn() };
@@ -80,9 +93,16 @@ describe('AudioTrimmer', () => {
   it('S4: play scopes audition to the region', async () => {
     (decodeAudioFile as any).mockResolvedValue(fakeBuffer(192));
     render(<AudioTrimmer file={makeFile()} onConfirm={vi.fn()} />);
-    fireEvent.click(await screen.findByTestId('trimmer-play'));
-    // Assert the component called the region-scoped play path (wavesurfer.play / setTime).
-    // (Exact assertion follows the mock surface chosen above.)
+    // Wait for the component to load and enter expanded mode (long source = 192s)
+    await screen.findByTestId('trimmer-play');
+    // Clear any calls from initialization
+    mockWs.instance!.setTime.mockClear();
+    mockWs.instance!.play.mockClear();
+    // Click play — must seek to region start then call play()
+    fireEvent.click(screen.getByTestId('trimmer-play'));
+    // Region start is set to 42 by suggestWindow mock
+    expect(mockWs.instance!.setTime).toHaveBeenCalledWith(42);
+    expect(mockWs.instance!.play).toHaveBeenCalled();
   });
 
   it('S5: an in-range clip rests collapsed and expands on demand', async () => {

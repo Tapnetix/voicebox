@@ -1,5 +1,6 @@
 import { Repeat, RotateCcw, SkipBack, Play, Pause, Wand2, ChevronDown } from 'lucide-react';
 import { useEffect, useRef, useState, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import WaveSurfer from 'wavesurfer.js';
 import RegionsPlugin from 'wavesurfer.js/dist/plugins/regions.js';
 import { Button } from '@/components/ui/button';
@@ -23,7 +24,7 @@ import {
 export interface AudioTrimmerProps {
   file: File;
   onConfirm: (trimmed: File, durationSec: number) => void;
-  collapsedByDefault?: boolean;
+  expandedByDefault?: boolean;
 }
 
 type Mode = 'loading' | 'whole-clip' | 'collapsed' | 'expanded';
@@ -41,18 +42,20 @@ function clamp(v: number, lo: number, hi: number) {
   return Math.max(lo, Math.min(hi, v));
 }
 
-/** Label text for the chip depending on classification. */
-function chipLabel(classification: 'ideal' | 'neutral' | 'warn'): string {
-  if (classification === 'ideal') return 'ideal';
-  if (classification === 'neutral') return 'neutral';
-  return 'longer than recommended';
+/** i18n key for the chip depending on classification. */
+function chipLabelKey(classification: 'ideal' | 'neutral' | 'warn'): string {
+  if (classification === 'ideal') return 'trimmer.chipIdeal';
+  if (classification === 'neutral') return 'trimmer.chipNeutral';
+  return 'trimmer.chipLonger';
 }
 
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
-export function AudioTrimmer({ file, onConfirm, collapsedByDefault }: AudioTrimmerProps) {
+export function AudioTrimmer({ file, onConfirm, expandedByDefault }: AudioTrimmerProps) {
+  const { t } = useTranslation();
+
   // ---- state ----
   const [mode, setMode] = useState<Mode>('loading');
   const [region, setRegion] = useState<Region>({ start: 0, end: WINDOW_DEFAULT });
@@ -90,9 +93,9 @@ export function AudioTrimmer({ file, onConfirm, collapsedByDefault }: AudioTrimm
         setMode('whole-clip');
         setRegion({ start: 0, end: dur });
       } else if (dur <= WINDOW_MAX) {
-        // In-range — collapsed (unless caller forces expand)
+        // In-range — collapsed by default, expanded if caller sets expandedByDefault
         setRegion({ start: 0, end: dur });
-        setMode(collapsedByDefault === false ? 'expanded' : 'collapsed');
+        setMode(expandedByDefault === true ? 'expanded' : 'collapsed');
       } else {
         // Long source — auto-expand with suggested window
         const suggested = suggestWindow(buffer, WINDOW_DEFAULT);
@@ -104,7 +107,7 @@ export function AudioTrimmer({ file, onConfirm, collapsedByDefault }: AudioTrimm
     });
 
     return () => { cancelled = true; };
-  }, [file, collapsedByDefault]);
+  }, [file, expandedByDefault]);
 
   // ---- wavesurfer init / teardown when mode becomes expanded or whole-clip ----
   useEffect(() => {
@@ -295,7 +298,7 @@ export function AudioTrimmer({ file, onConfirm, collapsedByDefault }: AudioTrimm
   if (mode === 'loading') {
     return (
       <div data-testid="audio-trimmer" data-state="loading" className="rounded-lg border border-border p-4 text-sm text-muted-foreground">
-        Loading audio…
+        {t('trimmer.loading')}
       </div>
     );
   }
@@ -307,12 +310,12 @@ export function AudioTrimmer({ file, onConfirm, collapsedByDefault }: AudioTrimm
         <div className="flex items-center gap-3">
           <span className="text-accent font-bold">✓</span>
           <div className="flex-1 min-w-0">
-            <div className="text-sm font-medium">Reference ready · {formatAudioDuration(duration)}</div>
+            <div className="text-sm font-medium">{t('trimmer.referenceReady')} · {formatAudioDuration(duration)}</div>
             <div
               className="text-xs text-muted-foreground"
               data-testid="trimmer-collapsed-note"
             >
-              In range — using the whole clip.
+              {t('trimmer.inRange')}
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -331,7 +334,7 @@ export function AudioTrimmer({ file, onConfirm, collapsedByDefault }: AudioTrimm
               data-testid="trimmer-expand"
               onClick={() => setMode('expanded')}
             >
-              Adjust window <ChevronDown className="h-3 w-3" />
+              {t('trimmer.adjustWindow')} <ChevronDown className="h-3 w-3" />
             </Button>
           </div>
         </div>
@@ -350,10 +353,10 @@ export function AudioTrimmer({ file, onConfirm, collapsedByDefault }: AudioTrimm
       <div className="flex items-center justify-between px-4 py-2 border-b border-border">
         <div>
           <span className="text-sm font-semibold">
-            {mode === 'whole-clip' ? 'Reference' : 'Trim reference'}
+            {mode === 'whole-clip' ? t('trimmer.reference') : t('trimmer.trimReference')}
           </span>
           <span className="text-xs text-muted-foreground ml-1">
-            {mode === 'whole-clip' ? '— whole clip' : '— pick a clean window'}
+            {mode === 'whole-clip' ? t('trimmer.wholeClipLabel') : t('trimmer.pickWindow')}
           </span>
         </div>
         <div className="text-xs text-muted-foreground" data-testid="trimmer-source">
@@ -380,7 +383,7 @@ export function AudioTrimmer({ file, onConfirm, collapsedByDefault }: AudioTrimm
           <span>{formatAudioDuration(0)}</span>
           {mode === 'expanded' && (
             <span data-testid="trimmer-selection" className="text-accent font-mono">
-              {formatAudioDuration(region.start)} – {formatAudioDuration(region.end)} · selection
+              {formatAudioDuration(region.start)} – {formatAudioDuration(region.end)} · {t('trimmer.selection')}
             </span>
           )}
           <span>{formatAudioDuration(duration)}</span>
@@ -389,7 +392,7 @@ export function AudioTrimmer({ file, onConfirm, collapsedByDefault }: AudioTrimm
         {/* Length slider (only in expanded mode) */}
         {mode === 'expanded' && (
           <div className="flex items-center gap-2">
-            <span className="text-xs text-muted-foreground">Window</span>
+            <span className="text-xs text-muted-foreground">{t('trimmer.window')}</span>
             <input
               type="range"
               min={WINDOW_MIN}
@@ -399,7 +402,7 @@ export function AudioTrimmer({ file, onConfirm, collapsedByDefault }: AudioTrimm
               data-testid="trimmer-length"
               className="flex-1 accent-amber-500"
             />
-            <span className="text-xs text-muted-foreground">15s — 45s</span>
+            <span className="text-xs text-muted-foreground">{t('trimmer.windowRange')}</span>
           </div>
         )}
 
@@ -438,7 +441,7 @@ export function AudioTrimmer({ file, onConfirm, collapsedByDefault }: AudioTrimm
             </Button>
           )}
           {mode === 'expanded' && (
-            <span className="text-xs text-muted-foreground">loop selection</span>
+            <span className="text-xs text-muted-foreground">{t('trimmer.loopSelection')}</span>
           )}
 
           <div className="flex-1" />
@@ -456,8 +459,8 @@ export function AudioTrimmer({ file, onConfirm, collapsedByDefault }: AudioTrimm
               .join(' ')}
           >
             {mode === 'whole-clip'
-              ? `${Math.round(lengthSec)}s · whole clip`
-              : `${Math.round(lengthSec)}s · ${chipLabel(classification)}`}
+              ? `${Math.round(lengthSec)}s · ${t('trimmer.wholeClip')}`
+              : `${Math.round(lengthSec)}s · ${t(chipLabelKey(classification))}`}
           </span>
 
           {mode === 'expanded' && (
@@ -468,7 +471,7 @@ export function AudioTrimmer({ file, onConfirm, collapsedByDefault }: AudioTrimm
               onClick={handleAutoSuggest}
             >
               <Wand2 className="h-3 w-3 mr-1" />
-              Auto-suggest
+              {t('trimmer.autoSuggest')}
             </Button>
           )}
         </div>
@@ -479,7 +482,7 @@ export function AudioTrimmer({ file, onConfirm, collapsedByDefault }: AudioTrimm
             data-testid="trimmer-warning"
             className="text-xs text-amber-400"
           >
-            Clones best at ~15–20s of clean speech. Longer is allowed but rarely helps.
+            {t('trimmer.warning')}
           </p>
         )}
 
@@ -489,7 +492,7 @@ export function AudioTrimmer({ file, onConfirm, collapsedByDefault }: AudioTrimm
             data-testid="trimmer-shortnote"
             className="text-xs text-muted-foreground"
           >
-            Under the 15s window — the whole clip is used (fine for cloning; ~10s+ recommended).
+            {t('trimmer.shortNote')}
           </p>
         )}
 
@@ -498,7 +501,7 @@ export function AudioTrimmer({ file, onConfirm, collapsedByDefault }: AudioTrimm
           className="w-full mt-1"
           onClick={handleConfirm}
         >
-          Use this clip
+          {t('trimmer.useThisClip')}
         </Button>
       </div>
     </div>
