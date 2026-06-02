@@ -1458,5 +1458,28 @@
       "migrationFailedGeneric": "Failed to migrate models",
       "migrationConnectionLost": "Lost connection during migration"
     }
+  },
+  "trimmer": {
+    "loading": "Loading audio…",
+    "trimReference": "Trim reference",
+    "pickWindow": "— pick a clean window",
+    "reference": "Reference",
+    "wholeClipLabel": "— whole clip",
+    "referenceReady": "Reference ready",
+    "inRange": "In range — using the whole clip.",
+    "adjustWindow": "Adjust window",
+    "selection": "selection",
+    "window": "Window",
+    "windowRange": "15s — 45s",
+    "loopSelection": "loop selection",
+    "autoSuggest": "Auto-suggest",
+    "useThisClip": "Use this clip",
+    "chipIdeal": "ideal",
+    "chipNeutral": "neutral",
+    "chipLonger": "longer than recommended",
+    "wholeClip": "whole clip",
+    "warning": "Clones best at ~15–20s of clean speech. Longer is allowed but rarely helps.",
+    "shortNote": "Under the 15s window — the whole clip is used (fine for cloning; ~10s+ recommended).",
+    "transcriptGuidance": "Transcribe only what is spoken in the selected window."
   }
 }
