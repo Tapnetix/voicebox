@@ -21,6 +21,8 @@ export default defineConfig({
         'src/components/BooksTab/**',
         'src/lib/hooks/useBooks*.ts',
         'src/stores/booksStore.ts',
+        'src/lib/utils/audio.ts',
+        'src/components/AudioTrimmer/**',
       ],
     },
   },
