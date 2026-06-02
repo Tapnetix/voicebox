@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   WINDOW_MIN,
   WINDOW_MAX,
@@ -6,6 +6,7 @@ import {
   WINDOW_WARN,
   IDEAL_MIN,
   IDEAL_MAX,
+  decodeAudioFile,
   suggestWindow,
   sliceToWav,
   classifyWindowLength,
@@ -103,5 +104,28 @@ describe('audioBufferToWav (now exported)', () => {
     });
     const head = new TextDecoder().decode(ab.slice(0, 4));
     expect(head).toBe('RIFF');
+  });
+});
+
+describe('decodeAudioFile', () => {
+  it('decodes the file via AudioContext and closes the context', async () => {
+    const fake = { numberOfChannels: 1, sampleRate: 24000, length: 3, duration: 3 / 24000 } as unknown as AudioBuffer;
+    const decodeAudioData = vi.fn().mockResolvedValue(fake);
+    const close = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal(
+      'AudioContext',
+      class {
+        decodeAudioData = decodeAudioData;
+        close = close;
+      },
+    );
+    const file = { arrayBuffer: vi.fn().mockResolvedValue(new ArrayBuffer(8)) } as unknown as File;
+
+    const result = await decodeAudioFile(file);
+
+    expect(result).toBe(fake);
+    expect(decodeAudioData).toHaveBeenCalledTimes(1);
+    expect(close).toHaveBeenCalledTimes(1); // closed in finally
+    vi.unstubAllGlobals();
   });
 });
