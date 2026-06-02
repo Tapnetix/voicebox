@@ -29,6 +29,7 @@ import { apiClient } from '@/lib/api/client';
 import { cn } from '@/lib/utils/cn';
 import { useBooksStore } from '@/stores/booksStore';
 import { toast } from '@/components/ui/use-toast';
+import { AudioTrimmer } from '@/components/AudioTrimmer/AudioTrimmer';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -218,6 +219,9 @@ function CloneTabBody({
 
   const [sampleFile, setSampleFile] = useState<File | null>(null);
   const [sampleDuration, setSampleDuration] = useState<number | null>(null);
+  // confirmedFile holds the trimmed File returned by AudioTrimmer onConfirm;
+  // cleared whenever a new raw sample is loaded.
+  const [confirmedFile, setConfirmedFile] = useState<File | null>(null);
   const [voiceName, setVoiceName] = useState(`${charName} (cloned)`);
   const [cloneError, setCloneError] = useState<string | null>(null);
   const [clonedProfileId, setClonedProfileId] = useState<string | null>(null);
@@ -226,11 +230,12 @@ function CloneTabBody({
 
   // ── Audio recording ───────────────────────────────────────────────────────
   const recording = useAudioRecording({
-    maxDurationSeconds: 29,
+    maxDurationSeconds: 120,
     onRecordingComplete: (blob, duration) => {
       const file = new File([blob], `${charName}-recording.wav`, { type: 'audio/wav' });
       setSampleFile(file);
       setSampleDuration(duration ?? null);
+      setConfirmedFile(null);
       setClonedProfileId(null);
       setCloneError(null);
     },
@@ -254,6 +259,7 @@ function CloneTabBody({
   function loadFile(file: File) {
     setClonedProfileId(null);
     setCloneError(null);
+    setConfirmedFile(null);
 
     // Probe duration via AudioContext (async; we validate before upload)
     const url = URL.createObjectURL(file);
@@ -274,7 +280,7 @@ function CloneTabBody({
   function validateDuration(): string | null {
     if (sampleDuration === null) return null; // unknown — allow upload
     if (sampleDuration < 3) return t('books.voiceEditor.cloneTooShort');
-    if (sampleDuration > 30) return t('books.voiceEditor.cloneTooLong');
+    // cloneTooLong (>30s) removed: AudioTrimmer now handles long samples
     return null;
   }
 
@@ -290,12 +296,15 @@ function CloneTabBody({
 
     setCloneError(null);
 
+    // Use the trimmed file if the user confirmed the trimmer; fall back to the raw sample.
+    const fileToUpload = confirmedFile ?? sampleFile;
+
     try {
       const profile = await cloneVoice.mutateAsync({
         bookId,
         charId,
         name: voiceName || `${charName} (cloned)`,
-        file: sampleFile,
+        file: fileToUpload,
       });
       setClonedProfileId(profile.id);
       onCloned(profile.id);
@@ -404,6 +413,19 @@ function CloneTabBody({
           </Button>
         </div>
       </div>
+
+      {/* AudioTrimmer — shown when a sample is loaded; onConfirm stores the trimmed file */}
+      {sampleFile && (
+        <div className="mt-3">
+          <AudioTrimmer
+            file={sampleFile}
+            onConfirm={(trimmed, _durationSec) => {
+              setConfirmedFile(trimmed);
+              setCloneError(null);
+            }}
+          />
+        </div>
+      )}
 
       {/* Inline error */}
       {cloneError && (

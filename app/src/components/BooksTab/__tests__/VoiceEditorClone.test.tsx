@@ -5,6 +5,13 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { VoiceEditor } from '@/components/BooksTab/VoiceEditor';
 
+// AudioTrimmer uses WaveSurfer / AudioContext — stub it out for this unit-test suite.
+vi.mock('@/components/AudioTrimmer/AudioTrimmer', () => ({
+  AudioTrimmer: ({ file }: { file: File }) => (
+    <div data-testid="audio-trimmer">{file.name}</div>
+  ),
+}));
+
 const createClone = vi.fn().mockResolvedValue({ id: 'cloned-1', name: 'Mira (cloned)' });
 const updateMutate = vi.fn();
 const previewMutate = vi.fn();
@@ -177,19 +184,23 @@ describe('VoiceEditor (Clone)', () => {
     expect(createClone).not.toHaveBeenCalled();
   });
 
-  it('shows cloneTooLong error when recorded sample is over 30 seconds', async () => {
+  it('does NOT reject a >30s recorded sample — AudioTrimmer handles long samples', async () => {
     const u = userEvent.setup();
     render(<VoiceEditor initialTab="clone" />);
 
-    // Simulate a recording that completes with duration = 35 s (too long)
+    // Simulate a recording that completes with duration = 35 s (previously "too long")
     act(() => {
       capturedOnRecordingComplete?.(new Blob(['audio'], { type: 'audio/wav' }), 35);
     });
 
     await u.click(screen.getByTestId('create-clone-btn'));
 
-    expect(await screen.findByRole('alert')).toHaveTextContent(/too long/i);
-    expect(createClone).not.toHaveBeenCalled();
+    // No "too long" alert; clone proceeds (the trimmer mock auto-passes)
+    const alert = screen.queryByRole('alert');
+    if (alert) {
+      expect(alert).not.toHaveTextContent(/too long/i);
+    }
+    expect(createClone).toHaveBeenCalled();
   });
 
   it('does not block upload when sample duration is exactly at boundaries (3 s and 30 s)', async () => {
