@@ -7,12 +7,9 @@ import { SampleUpload } from '@/components/VoiceProfiles/SampleUpload';
 
 // ---- mocks ----
 
-// Mock AudioTrimmer as a stub that can expose an onConfirm trigger
-let capturedOnConfirm: ((file: File, durationSec: number) => void) | null = null;
-
+// Mock AudioTrimmer as a stub exposing a confirm button that fires onConfirm
 vi.mock('@/components/AudioTrimmer/AudioTrimmer', () => ({
   AudioTrimmer: ({ file, onConfirm }: { file: File; onConfirm: (f: File, d: number) => void }) => {
-    capturedOnConfirm = onConfirm;
     return (
       <div data-testid="audio-trimmer">
         <span data-testid="trimmer-file-name">{file.name}</span>
@@ -106,7 +103,6 @@ function renderSampleUpload(open = true) {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  capturedOnConfirm = null;
   addSampleMutateAsync.mockResolvedValue({});
 });
 
