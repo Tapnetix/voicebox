@@ -482,6 +482,7 @@
       "language": "Language",
       "referenceText": "Reference Text",
       "referenceTextPlaceholder": "Enter the exact text spoken in the audio…",
+      "referenceTextHint": "Transcribe only the selected window — the clip the trimmer will use for cloning.",
       "defaultEngine": "Default Engine",
       "noPreference": "No preference",
       "defaultEngineHint": "Auto-selects this engine when the profile is chosen.",

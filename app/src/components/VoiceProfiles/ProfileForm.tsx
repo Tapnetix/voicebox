@@ -51,16 +51,16 @@ import {
 } from '@/lib/hooks/useProfiles';
 import { useSystemAudioCapture } from '@/lib/hooks/useSystemAudioCapture';
 import { useTranscription } from '@/lib/hooks/useTranscription';
-import { convertToWav, formatAudioDuration, getAudioDuration } from '@/lib/utils/audio';
+import { getAudioDuration } from '@/lib/utils/audio';
 import { usePlatform } from '@/platform/PlatformContext';
 import { useServerStore } from '@/stores/serverStore';
 import { type ProfileFormDraft, useUIStore } from '@/stores/uiStore';
+import { AudioTrimmer } from '@/components/AudioTrimmer/AudioTrimmer';
 import { AudioSampleRecording } from './AudioSampleRecording';
 import { AudioSampleSystem } from './AudioSampleSystem';
 import { AudioSampleUpload } from './AudioSampleUpload';
 import { SampleList } from './SampleList';
 
-const MAX_AUDIO_DURATION_SECONDS = 30;
 const PRESET_ONLY_ENGINES = new Set(['kokoro', 'qwen_custom_voice']);
 const DEFAULT_ENGINE_OPTIONS = [
   { value: 'qwen', label: 'Qwen3-TTS' },
@@ -149,9 +149,11 @@ export function ProfileForm() {
   const { toast } = useToast();
   const [voiceSource, setVoiceSource] = useState<'clone' | 'builtin'>('clone');
   const [sampleMode, setSampleMode] = useState<'upload' | 'record' | 'system'>('record');
-  const [audioDuration, setAudioDuration] = useState<number | null>(null);
   const [isValidatingAudio, setIsValidatingAudio] = useState(false);
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
+  // rawSelectedFile is the file as selected/recorded — fed into AudioTrimmer.
+  // The form's sampleFile is set only after the trimmer confirms a trimmed clip.
+  const [rawSelectedFile, setRawSelectedFile] = useState<File | null>(null);
   const [selectedPresetEngine, setSelectedPresetEngine] = useState<string>('kokoro');
   const [selectedPresetVoiceId, setSelectedPresetVoiceId] = useState<string>('');
   const avatarInputRef = useRef<HTMLInputElement>(null);
@@ -178,38 +180,26 @@ export function ProfileForm() {
   const selectedFile = form.watch('sampleFile');
   const selectedAvatarFile = form.watch('avatarFile');
 
-  // Validate audio duration when file is selected
+  // Validate raw file can be decoded (no longer reject based on duration —
+  // long audio is handled by AudioTrimmer instead).
   useEffect(() => {
-    if (selectedFile && selectedFile instanceof File) {
+    if (rawSelectedFile && rawSelectedFile instanceof File) {
       setIsValidatingAudio(true);
-      getAudioDuration(selectedFile as File & { recordedDuration?: number })
-        .then((duration) => {
-          setAudioDuration(duration);
-          if (duration > MAX_AUDIO_DURATION_SECONDS) {
-            form.setError('sampleFile', {
-              type: 'manual',
-              message: t('profileForm.validation.audioTooLong', {
-                duration: formatAudioDuration(duration),
-                max: formatAudioDuration(MAX_AUDIO_DURATION_SECONDS),
-              }),
-            });
-          } else {
-            form.clearErrors('sampleFile');
-          }
+      getAudioDuration(rawSelectedFile as File & { recordedDuration?: number })
+        .then(() => {
+          form.clearErrors('sampleFile');
         })
         .catch((error) => {
           console.error('Failed to get audio duration:', error);
-          setAudioDuration(null);
           const isRecordedFile =
-            selectedFile.name.startsWith('recording-') ||
-            selectedFile.name.startsWith('system-audio-');
+            rawSelectedFile.name.startsWith('recording-') ||
+            rawSelectedFile.name.startsWith('system-audio-');
           if (!isRecordedFile) {
             form.setError('sampleFile', {
               type: 'manual',
               message: t('profileForm.validation.audioFailed'),
             });
           } else {
-            // Clear any existing errors for recorded files
             form.clearErrors('sampleFile');
           }
         })
@@ -217,10 +207,9 @@ export function ProfileForm() {
           setIsValidatingAudio(false);
         });
     } else {
-      setAudioDuration(null);
       form.clearErrors('sampleFile');
     }
-  }, [selectedFile, form, t]);
+  }, [rawSelectedFile, form, t]);
 
   const {
     isRecording,
@@ -230,7 +219,7 @@ export function ProfileForm() {
     stopRecording,
     cancelRecording,
   } = useAudioRecording({
-    maxDurationSeconds: 29,
+    maxDurationSeconds: 120,
     onRecordingComplete: (blob, recordedDuration) => {
       const file = new File([blob], `recording-${Date.now()}.webm`, {
         type: blob.type || 'audio/webm',
@@ -239,7 +228,7 @@ export function ProfileForm() {
       if (recordedDuration !== undefined) {
         file.recordedDuration = recordedDuration;
       }
-      form.setValue('sampleFile', file, { shouldValidate: true });
+      setRawSelectedFile(file);
       toast({
         title: t('profileForm.toast.recordingComplete'),
         description: t('profileForm.toast.recordingCompleteDescription'),
@@ -256,7 +245,7 @@ export function ProfileForm() {
     stopRecording: stopSystemRecording,
     cancelRecording: cancelSystemRecording,
   } = useSystemAudioCapture({
-    maxDurationSeconds: 29,
+    maxDurationSeconds: 120,
     onRecordingComplete: (blob, recordedDuration) => {
       const file = new File([blob], `system-audio-${Date.now()}.wav`, {
         type: blob.type || 'audio/wav',
@@ -265,7 +254,7 @@ export function ProfileForm() {
       if (recordedDuration !== undefined) {
         file.recordedDuration = recordedDuration;
       }
-      form.setValue('sampleFile', file, { shouldValidate: true });
+      setRawSelectedFile(file);
       toast({
         title: t('profileForm.toast.systemAudioCaptured'),
         description: t('profileForm.toast.systemAudioCapturedDescription'),
@@ -339,6 +328,7 @@ export function ProfileForm() {
         referenceText: undefined,
         avatarFile: undefined,
       });
+      setRawSelectedFile(null);
       setProfileEffectsChain(editingProfile.effects_chain ?? []);
       setEffectsDirty(false);
       setDefaultEngine(editingProfile.default_engine ?? '');
@@ -354,6 +344,7 @@ export function ProfileForm() {
         avatarFile: undefined,
       });
       setSampleMode(profileFormDraft.sampleMode);
+      setRawSelectedFile(null);
       // Restore the file if we have it saved
       if (
         profileFormDraft.sampleFileData &&
@@ -379,6 +370,7 @@ export function ProfileForm() {
         avatarFile: undefined,
       });
       setSampleMode('record');
+      setRawSelectedFile(null);
       setAvatarPreview(null);
     }
   }, [editingProfile, profileFormDraft, open, form]);
@@ -434,6 +426,7 @@ export function ProfileForm() {
       cancelSystemRecording();
     }
     form.resetField('sampleFile');
+    setRawSelectedFile(null);
     cleanupAudio();
   }
 
@@ -622,41 +615,8 @@ export function ProfileForm() {
           return;
         }
 
-        try {
-          const duration = await getAudioDuration(sampleFile);
-          if (duration > MAX_AUDIO_DURATION_SECONDS) {
-            form.setError('sampleFile', {
-              type: 'manual',
-              message: t('profileForm.validation.audioTooLong', {
-                duration: formatAudioDuration(duration),
-                max: formatAudioDuration(MAX_AUDIO_DURATION_SECONDS),
-              }),
-            });
-            toast({
-              title: t('profileForm.toast.invalidAudio'),
-              description: t('profileForm.toast.invalidAudioDescription', {
-                duration: formatAudioDuration(duration),
-                max: formatAudioDuration(MAX_AUDIO_DURATION_SECONDS),
-              }),
-              variant: 'destructive',
-            });
-            return;
-          }
-        } catch (error) {
-          form.setError('sampleFile', {
-            type: 'manual',
-            message: t('profileForm.validation.audioFailed'),
-          });
-          toast({
-            title: t('profileForm.toast.validationError'),
-            description:
-              error instanceof Error ? error.message : t('profileForm.validation.audioFailed'),
-            variant: 'destructive',
-          });
-          return;
-        }
-
-        // Creating: create profile, then add sample
+        // Creating: create profile, then add sample.
+        // sampleFile is the trimmed WAV produced by AudioTrimmer — upload it directly.
         const profile = await createProfile.mutateAsync({
           name: data.name,
           description: data.description,
@@ -665,23 +625,10 @@ export function ProfileForm() {
           personality: data.personality?.trim() ? data.personality.trim() : undefined,
         });
 
-        // Convert non-WAV uploads to WAV so the backend can always use soundfile.
-        // Recorded audio is already WAV (from useAudioRecording's convertToWav call).
-        let fileToUpload: File = sampleFile;
-        if (!sampleFile.type.includes('wav') && !sampleFile.name.toLowerCase().endsWith('.wav')) {
-          try {
-            const wavBlob = await convertToWav(sampleFile);
-            const wavName = sampleFile.name.replace(/\.[^.]+$/, '.wav');
-            fileToUpload = new File([wavBlob], wavName, { type: 'audio/wav' });
-          } catch {
-            // If browser can't decode the format, send the original and let the backend try.
-          }
-        }
-
         try {
           await addSample.mutateAsync({
             profileId: profile.id,
-            file: fileToUpload,
+            file: sampleFile,
             referenceText: referenceText,
           });
 
@@ -974,61 +921,57 @@ export function ProfileForm() {
                             </TabsList>
 
                             <TabsContent value="upload" className="space-y-4">
-                              <FormField
-                                control={form.control}
-                                name="sampleFile"
-                                render={({ field: { onChange, name } }) => (
-                                  <AudioSampleUpload
-                                    file={selectedFile}
-                                    onFileChange={onChange}
-                                    onTranscribe={handleTranscribe}
-                                    onPlayPause={handlePlayPause}
-                                    isPlaying={isPlaying}
-                                    isValidating={isValidatingAudio}
-                                    isTranscribing={transcribe.isPending}
-                                    isDisabled={
-                                      audioDuration !== null &&
-                                      audioDuration > MAX_AUDIO_DURATION_SECONDS
-                                    }
-                                    fieldName={name}
-                                  />
-                                )}
-                              />
+                              {rawSelectedFile ? (
+                                <AudioTrimmer
+                                  file={rawSelectedFile}
+                                  onConfirm={(trimmed) => {
+                                    form.setValue('sampleFile', trimmed, { shouldValidate: true });
+                                  }}
+                                />
+                              ) : (
+                                <FormField
+                                  control={form.control}
+                                  name="sampleFile"
+                                  render={({ field: { name } }) => (
+                                    <AudioSampleUpload
+                                      file={selectedFile}
+                                      onFileChange={(file) => {
+                                        setRawSelectedFile(file ?? null);
+                                        // Clear any previously confirmed trimmed file
+                                        form.setValue('sampleFile', undefined);
+                                      }}
+                                      onTranscribe={handleTranscribe}
+                                      onPlayPause={handlePlayPause}
+                                      isPlaying={isPlaying}
+                                      isValidating={isValidatingAudio}
+                                      isTranscribing={transcribe.isPending}
+                                      isDisabled={false}
+                                      fieldName={name}
+                                    />
+                                  )}
+                                />
+                              )}
                             </TabsContent>
 
                             <TabsContent value="record" className="space-y-4">
-                              <FormField
-                                control={form.control}
-                                name="sampleFile"
-                                render={() => (
-                                  <AudioSampleRecording
-                                    file={selectedFile}
-                                    isRecording={isRecording}
-                                    duration={duration}
-                                    onStart={startRecording}
-                                    onStop={stopRecording}
-                                    onCancel={handleCancelRecording}
-                                    onTranscribe={handleTranscribe}
-                                    onPlayPause={handlePlayPause}
-                                    isPlaying={isPlaying}
-                                    isTranscribing={transcribe.isPending}
-                                  />
-                                )}
-                              />
-                            </TabsContent>
-
-                            {platform.metadata.isTauri && isSystemAudioSupported && (
-                              <TabsContent value="system" className="space-y-4">
+                              {rawSelectedFile ? (
+                                <AudioTrimmer
+                                  file={rawSelectedFile}
+                                  onConfirm={(trimmed) => {
+                                    form.setValue('sampleFile', trimmed, { shouldValidate: true });
+                                  }}
+                                />
+                              ) : (
                                 <FormField
                                   control={form.control}
                                   name="sampleFile"
                                   render={() => (
-                                    <AudioSampleSystem
+                                    <AudioSampleRecording
                                       file={selectedFile}
-                                      isRecording={isSystemRecording}
-                                      duration={systemDuration}
-                                      onStart={startSystemRecording}
-                                      onStop={stopSystemRecording}
+                                      isRecording={isRecording}
+                                      duration={duration}
+                                      onStart={startRecording}
+                                      onStop={stopRecording}
                                       onCancel={handleCancelRecording}
                                       onTranscribe={handleTranscribe}
                                       onPlayPause={handlePlayPause}
@@ -1037,6 +980,40 @@ export function ProfileForm() {
                                     />
                                   )}
                                 />
+                              )}
+                            </TabsContent>
+
+                            {platform.metadata.isTauri && isSystemAudioSupported && (
+                              <TabsContent value="system" className="space-y-4">
+                                {rawSelectedFile ? (
+                                  <AudioTrimmer
+                                    file={rawSelectedFile}
+                                    onConfirm={(trimmed) => {
+                                      form.setValue('sampleFile', trimmed, {
+                                        shouldValidate: true,
+                                      });
+                                    }}
+                                  />
+                                ) : (
+                                  <FormField
+                                    control={form.control}
+                                    name="sampleFile"
+                                    render={() => (
+                                      <AudioSampleSystem
+                                        file={selectedFile}
+                                        isRecording={isSystemRecording}
+                                        duration={systemDuration}
+                                        onStart={startSystemRecording}
+                                        onStop={stopSystemRecording}
+                                        onCancel={handleCancelRecording}
+                                        onTranscribe={handleTranscribe}
+                                        onPlayPause={handlePlayPause}
+                                        isPlaying={isPlaying}
+                                        isTranscribing={transcribe.isPending}
+                                      />
+                                    )}
+                                  />
+                                )}
                               </TabsContent>
                             )}
                           </Tabs>
@@ -1054,6 +1031,9 @@ export function ProfileForm() {
                                     {...field}
                                   />
                                 </FormControl>
+                                <FormDescription>
+                                  {t('profileForm.fields.referenceTextHint')}
+                                </FormDescription>
                                 <FormMessage />
                               </FormItem>
                             )}
