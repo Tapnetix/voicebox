@@ -3,6 +3,7 @@ import { Mic, Monitor, Upload } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import * as z from 'zod';
+import { AudioTrimmer } from '@/components/AudioTrimmer/AudioTrimmer';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -57,14 +58,16 @@ export function SampleUpload({ profileId, open, onOpenChange }: SampleUploadProp
   const [mode, setMode] = useState<'upload' | 'record' | 'system'>('upload');
   const { isPlaying, playPause, cleanup: cleanupAudio } = useAudioPlayer();
 
+  // rawFile: the file selected/recorded — fed into AudioTrimmer as input only
+  // The form's 'file' field holds the trimmed file returned by AudioTrimmer.onConfirm
+  const [rawFile, setRawFile] = useState<File | null>(null);
+
   const form = useForm<SampleFormValues>({
     resolver: zodResolver(sampleSchema),
     defaultValues: {
       referenceText: '',
     },
   });
-
-  const selectedFile = form.watch('file');
 
   const {
     isRecording,
@@ -74,7 +77,7 @@ export function SampleUpload({ profileId, open, onOpenChange }: SampleUploadProp
     stopRecording,
     cancelRecording,
   } = useAudioRecording({
-    maxDurationSeconds: 29,
+    maxDurationSeconds: 120,
     onRecordingComplete: (blob, recordedDuration) => {
       // Convert blob to File object
       const file = new File([blob], `recording-${Date.now()}.webm`, {
@@ -84,7 +87,8 @@ export function SampleUpload({ profileId, open, onOpenChange }: SampleUploadProp
       if (recordedDuration !== undefined) {
         file.recordedDuration = recordedDuration;
       }
-      form.setValue('file', file, { shouldValidate: true });
+      // Feed recorded file into the trimmer; form 'file' will be set on trimmer confirm
+      setRawFile(file);
       toast({
         title: 'Recording complete',
         description: 'Audio has been recorded successfully.',
@@ -101,7 +105,7 @@ export function SampleUpload({ profileId, open, onOpenChange }: SampleUploadProp
     stopRecording: stopSystemRecording,
     cancelRecording: cancelSystemRecording,
   } = useSystemAudioCapture({
-    maxDurationSeconds: 29,
+    maxDurationSeconds: 120,
     onRecordingComplete: (blob, recordedDuration) => {
       // Convert blob to File object
       const file = new File([blob], `system-audio-${Date.now()}.wav`, {
@@ -111,7 +115,8 @@ export function SampleUpload({ profileId, open, onOpenChange }: SampleUploadProp
       if (recordedDuration !== undefined) {
         file.recordedDuration = recordedDuration;
       }
-      form.setValue('file', file, { shouldValidate: true });
+      // Feed captured file into the trimmer; form 'file' will be set on trimmer confirm
+      setRawFile(file);
       toast({
         title: 'System audio captured',
         description: 'Audio has been captured successfully.',
@@ -192,6 +197,7 @@ export function SampleUpload({ profileId, open, onOpenChange }: SampleUploadProp
   function handleOpenChange(newOpen: boolean) {
     if (!newOpen) {
       form.reset();
+      setRawFile(null);
       setMode('upload');
       if (isRecording) {
         cancelRecording();
@@ -210,8 +216,13 @@ export function SampleUpload({ profileId, open, onOpenChange }: SampleUploadProp
     } else if (mode === 'system') {
       cancelSystemRecording();
     }
+    setRawFile(null);
     form.resetField('file');
     cleanupAudio();
+  }
+
+  function handleTrimmerConfirm(trimmed: File, _durationSec: number) {
+    form.setValue('file', trimmed, { shouldValidate: true });
   }
 
   function handlePlayPause() {
@@ -255,10 +266,16 @@ export function SampleUpload({ profileId, open, onOpenChange }: SampleUploadProp
                 <FormField
                   control={form.control}
                   name="file"
-                  render={({ field: { onChange, name } }) => (
+                  render={({ field: { name } }) => (
                     <AudioSampleUpload
-                      file={selectedFile}
-                      onFileChange={onChange}
+                      file={rawFile}
+                      onFileChange={(f) => {
+                        // Feed into trimmer; do NOT set form value here
+                        setRawFile(f ?? null);
+                        if (!f) {
+                          form.resetField('file');
+                        }
+                      }}
                       onTranscribe={handleTranscribe}
                       onPlayPause={handlePlayPause}
                       isPlaying={isPlaying}
@@ -267,6 +284,12 @@ export function SampleUpload({ profileId, open, onOpenChange }: SampleUploadProp
                     />
                   )}
                 />
+                {rawFile && (
+                  <AudioTrimmer
+                    file={rawFile}
+                    onConfirm={handleTrimmerConfirm}
+                  />
+                )}
               </TabsContent>
 
               <TabsContent value="record" className="space-y-4">
@@ -275,7 +298,7 @@ export function SampleUpload({ profileId, open, onOpenChange }: SampleUploadProp
                   name="file"
                   render={() => (
                     <AudioSampleRecording
-                      file={selectedFile}
+                      file={rawFile}
                       isRecording={isRecording}
                       duration={duration}
                       onStart={startRecording}
@@ -288,6 +311,12 @@ export function SampleUpload({ profileId, open, onOpenChange }: SampleUploadProp
                     />
                   )}
                 />
+                {rawFile && !isRecording && (
+                  <AudioTrimmer
+                    file={rawFile}
+                    onConfirm={handleTrimmerConfirm}
+                  />
+                )}
               </TabsContent>
 
               {platform.metadata.isTauri && isSystemAudioSupported && (
@@ -297,7 +326,7 @@ export function SampleUpload({ profileId, open, onOpenChange }: SampleUploadProp
                     name="file"
                     render={() => (
                       <AudioSampleSystem
-                        file={selectedFile}
+                        file={rawFile}
                         isRecording={isSystemRecording}
                         duration={systemDuration}
                         onStart={startSystemRecording}
@@ -310,6 +339,12 @@ export function SampleUpload({ profileId, open, onOpenChange }: SampleUploadProp
                       />
                     )}
                   />
+                  {rawFile && !isSystemRecording && (
+                    <AudioTrimmer
+                      file={rawFile}
+                      onConfirm={handleTrimmerConfirm}
+                    />
+                  )}
                 </TabsContent>
               )}
             </Tabs>
