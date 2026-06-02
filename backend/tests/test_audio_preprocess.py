@@ -60,8 +60,8 @@ def test_silence_is_trimmed_with_padding_kept():
 
 def test_clean_audio_is_not_padded_past_original_length():
     # Well-recorded audio with no edge silence shouldn't get longer after
-    # preprocessing — otherwise a 29.9 s upload could be pushed past the
-    # 30 s max_duration ceiling downstream.
+    # preprocessing — otherwise a 44.9 s upload could be pushed past the
+    # 45 s max_duration ceiling downstream.
     audio = _tone(3.0, amp=0.3)
     out = preprocess_reference_audio(audio, SR)
     assert len(out) <= len(audio)
@@ -106,6 +106,23 @@ def test_validate_rejects_too_short(tmp_path):
 
     assert not ok
     assert "too short" in (err or "").lower()
+
+
+def test_validate_accepts_clip_up_to_new_cap(tmp_path):
+    audio = _tone(40.0, amp=0.3)
+    path = tmp_path / "long_ok.wav"
+    sf.write(str(path), audio, SR)
+    ok, err, _, _ = validate_and_load_reference_audio(str(path))
+    assert ok, f"expected 40s to pass under the 45s cap, got: {err}"
+
+
+def test_validate_rejects_clip_over_new_cap(tmp_path):
+    audio = _tone(50.0, amp=0.3)
+    path = tmp_path / "too_long.wav"
+    sf.write(str(path), audio, SR)
+    ok, err, _, _ = validate_and_load_reference_audio(str(path))
+    assert not ok
+    assert "too long" in (err or "").lower()
 
 
 if __name__ == "__main__":

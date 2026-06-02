@@ -280,7 +280,7 @@ def preprocess_reference_audio(
     if 0 < trimmed.size < audio.size:
         pad_each = int(sample_rate * edge_padding_ms / 1000)
         # Never pad past the original length — for near-max-duration uploads
-        # an unconditional pad would push them over the 30 s ceiling and
+        # an unconditional pad would push them over the 45 s ceiling and
         # trigger a spurious "too long" rejection.
         headroom = (audio.size - trimmed.size) // 2
         pad = min(pad_each, max(headroom, 0))
@@ -298,7 +298,7 @@ def preprocess_reference_audio(
 def validate_reference_audio(
     audio_path: str,
     min_duration: float = 2.0,
-    max_duration: float = 30.0,
+    max_duration: float = 45.0,
     min_rms: float = 0.01,
 ) -> Tuple[bool, Optional[str]]:
     """
@@ -322,7 +322,7 @@ def validate_reference_audio(
 def validate_and_load_reference_audio(
     audio_path: str,
     min_duration: float = 2.0,
-    max_duration: float = 30.0,
+    max_duration: float = 45.0,
     min_rms: float = 0.01,
 ) -> Tuple[bool, Optional[str], Optional[np.ndarray], Optional[int]]:
     """
