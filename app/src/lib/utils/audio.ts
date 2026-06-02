@@ -1,3 +1,118 @@
+// ---------------------------------------------------------------------------
+// Voice-clone trimmer — window constants
+// ---------------------------------------------------------------------------
+
+export const WINDOW_MIN = 15;
+export const WINDOW_MAX = 45;
+export const WINDOW_DEFAULT = 20;
+export const WINDOW_WARN = 30;
+export const IDEAL_MIN = 15;
+export const IDEAL_MAX = 20;
+
+const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
+
+/** 'ideal' for 15-20s, 'neutral' for 20<len<=30, 'warn' for >30s. */
+export function classifyWindowLength(lengthSec: number): 'ideal' | 'neutral' | 'warn' {
+  if (lengthSec > WINDOW_WARN) return 'warn';
+  if (lengthSec <= IDEAL_MAX) return 'ideal';
+  return 'neutral';
+}
+
+/**
+ * Fully decode an audio File to an AudioBuffer.
+ * Always decodes the real samples (ignores any recordedDuration shortcut) because
+ * the trimmer needs the actual samples for RMS suggestion and slicing.
+ */
+export async function decodeAudioFile(file: File): Promise<AudioBuffer> {
+  const audioContext = new AudioContext();
+  try {
+    const arrayBuffer = await file.arrayBuffer();
+    return await audioContext.decodeAudioData(arrayBuffer);
+  } finally {
+    await audioContext.close();
+  }
+}
+
+/**
+ * Sliding-window RMS over the decoded samples — picks the highest-energy
+ * contiguous window of `windowSec` (clamped to WINDOW_MIN..WINDOW_MAX) as a
+ * clean-speech proxy. Sources shorter than WINDOW_MIN return the whole clip.
+ */
+export function suggestWindow(
+  buffer: AudioBuffer,
+  windowSec: number,
+): { start: number; end: number } {
+  const duration = buffer.duration;
+  if (duration <= WINDOW_MIN) return { start: 0, end: duration };
+
+  const len = clamp(windowSec, WINDOW_MIN, Math.min(WINDOW_MAX, duration));
+  const sr = buffer.sampleRate;
+  const data = buffer.getChannelData(0);
+
+  // Coarse frame grid (20ms) of squared-sum energy for a fast prefix sum.
+  const frameLen = Math.max(1, Math.floor(sr * 0.02));
+  const nFrames = Math.floor(data.length / frameLen);
+  const energy = new Float64Array(nFrames + 1); // prefix sum of frame energies
+  for (let f = 0; f < nFrames; f++) {
+    let sum = 0;
+    const base = f * frameLen;
+    for (let i = 0; i < frameLen; i++) {
+      const v = data[base + i];
+      sum += v * v;
+    }
+    energy[f + 1] = energy[f] + sum;
+  }
+
+  const winFrames = Math.max(1, Math.round((len * sr) / frameLen));
+  let bestStartFrame = 0;
+  let bestEnergy = -1;
+  for (let f = 0; f + winFrames <= nFrames; f++) {
+    const e = energy[f + winFrames] - energy[f];
+    if (e > bestEnergy) {
+      bestEnergy = e;
+      bestStartFrame = f;
+    }
+  }
+
+  let start = (bestStartFrame * frameLen) / sr;
+  let end = start + len;
+  if (end > duration) {
+    end = duration;
+    start = Math.max(0, end - len);
+  }
+  return { start, end };
+}
+
+/**
+ * Slice [startSec, endSec) out of the decoded buffer and encode it as WAV.
+ * Reuses the exported audioBufferToWav encoder.
+ */
+export function sliceToWav(buffer: AudioBuffer, startSec: number, endSec: number): Blob {
+  const sr = buffer.sampleRate;
+  const start = clamp(Math.floor(startSec * sr), 0, buffer.length);
+  const end = clamp(Math.floor(endSec * sr), start, buffer.length);
+  const sliceLen = end - start;
+
+  // Build a minimal AudioBuffer-shaped object holding only the slice.
+  const channels: Float32Array[] = [];
+  for (let c = 0; c < buffer.numberOfChannels; c++) {
+    const ch = new Float32Array(sliceLen);
+    ch.set(buffer.getChannelData(c).subarray(start, end));
+    channels.push(ch);
+  }
+  const out: AudioBuffer = {
+    numberOfChannels: buffer.numberOfChannels,
+    sampleRate: sr,
+    length: sliceLen,
+    duration: sliceLen / sr,
+    getChannelData: (c: number) => channels[c],
+  } as unknown as AudioBuffer;
+
+  return audioBufferToWav(out);
+}
+
+// ---------------------------------------------------------------------------
+
 export function createAudioUrl(audioId: string, serverUrl: string): string {
   return `${serverUrl}/audio/${audioId}`;
 }
@@ -96,7 +211,7 @@ export async function convertToWav(audioBlob: Blob): Promise<Blob> {
 /**
  * Convert AudioBuffer to WAV blob.
  */
-function audioBufferToWav(buffer: AudioBuffer): Blob {
+export function audioBufferToWav(buffer: AudioBuffer): Blob {
   const numberOfChannels = buffer.numberOfChannels;
   const sampleRate = buffer.sampleRate;
   const format = 1; // PCM
