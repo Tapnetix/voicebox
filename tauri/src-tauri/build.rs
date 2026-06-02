@@ -37,7 +37,12 @@ fn main() {
         // voiceit.icon is in tauri/assets/voiceit.icon (one level up from src-tauri)
         let icon_source = format!("{}/../assets/voiceit.icon", project_root);
 
-        if std::path::Path::new(&icon_source).exists() {
+        // Liquid Glass icon compilation is opt-in (VOICEIT_LIQUID_GLASS=1). Disabled
+        // by default: the .icon bundle still holds the old mic art and can only be
+        // regenerated with Icon Composer on a Mac. With it off, macOS uses the
+        // standard icons/icon.icns (the current VoiceIt logo) consistently — and the
+        // build no longer depends on actool succeeding.
+        if std::env::var("VOICEIT_LIQUID_GLASS").is_ok() && std::path::Path::new(&icon_source).exists() {
             println!("cargo:rerun-if-changed={}", icon_source);
             println!("cargo:rerun-if-changed={}/icon.json", icon_source);
             println!("cargo:rerun-if-changed={}/Assets", icon_source);

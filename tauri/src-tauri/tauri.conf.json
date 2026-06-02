@@ -13,7 +13,10 @@
     "active": true,
     "targets": "all",
     "createUpdaterArtifacts": "v1Compatible",
-    "externalBin": ["binaries/voiceit-server", "binaries/voiceit-mcp"],
+    "externalBin": [
+      "binaries/voiceit-server",
+      "binaries/voiceit-mcp"
+    ],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -27,17 +30,15 @@
       "infoPlist": "Info.plist",
       "entitlements": "Entitlements.plist"
     },
-    "resources": {
-      "gen/Assets.car": "./",
-      "gen/voiceit.icns": "./",
-      "gen/partial.plist": "./"
-    }
+    "resources": {}
   },
   "app": {
     "macOSPrivateApi": true,
     "security": {
       "csp": null,
-      "capabilities": ["default"]
+      "capabilities": [
+        "default"
+      ]
     },
     "windows": [
       {
@@ -61,7 +62,9 @@
     },
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEUxRENBQkRBQjdBNTM1OTIKUldTU05hVzMycXZjNGJGcUxmcVVocll2QjdSaTJNdlFxR2M3VDJsMnVvbDdyZGRPMmRlOW9aWTcK",
-      "endpoints": ["https://github.com/Tapnetix/VoiceIt/releases/latest/download/latest.json"]
+      "endpoints": [
+        "https://github.com/Tapnetix/VoiceIt/releases/latest/download/latest.json"
+      ]
     }
   }
 }
