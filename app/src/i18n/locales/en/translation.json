@@ -165,7 +165,6 @@
       "cloneAssignBtn": "Assign & back",
       "cloneDurationHint": "{{duration}}s — 3–30s recommended",
       "cloneTooShort": "Sample is too short (minimum 3 seconds).",
-      "cloneTooLong": "Sample is too long (maximum 30 seconds).",
       "describeVoice": "Describe the voice",
       "designPromptPlaceholder": "E.g. warm, resolute woman in her thirties; measured, low-register, faint Northern lilt.",
       "generatePreview": "Generate preview",
@@ -1480,7 +1479,6 @@
     "chipLonger": "longer than recommended",
     "wholeClip": "whole clip",
     "warning": "Clones best at ~15–20s of clean speech. Longer is allowed but rarely helps.",
-    "shortNote": "Under the 15s window — the whole clip is used (fine for cloning; ~10s+ recommended).",
-    "transcriptGuidance": "Transcribe only what is spoken in the selected window."
+    "shortNote": "Under the 15s window — the whole clip is used (fine for cloning; ~10s+ recommended)."
   }
 }

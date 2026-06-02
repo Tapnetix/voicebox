@@ -96,8 +96,7 @@ describe('VoiceEditor Clone tab — AudioTrimmer integration', () => {
     expect(screen.getByTestId('audio-trimmer')).toBeInTheDocument();
   });
 
-  it('does NOT show cloneTooLong error for a >30s sample — trimmer handles it instead', async () => {
-    const u = userEvent.setup();
+  it('does NOT show cloneTooLong for a >30s sample, and gates Create until the trim is confirmed', () => {
     render(<VoiceEditor initialTab="clone" />);
 
     // Simulate a recording that completes with duration = 35s (previously too long)
@@ -105,16 +104,11 @@ describe('VoiceEditor Clone tab — AudioTrimmer integration', () => {
       capturedOnRecordingComplete?.(new Blob(['audio'], { type: 'audio/wav' }), 35);
     });
 
-    // The trimmer should be visible, NOT cloneTooLong error
+    // The trimmer is shown (no cloneTooLong error) and Create stays disabled
+    // until the user confirms a trimmed window — so the raw, untrimmed file is
+    // never uploaded (consistent with ProfileForm/SampleUpload).
     expect(screen.getByTestId('audio-trimmer')).toBeInTheDocument();
-
-    // Clicking Create should NOT show 'too long' error
-    await u.click(screen.getByTestId('create-clone-btn'));
-    // The alert (if any) must not contain 'too long'
-    const alert = screen.queryByRole('alert');
-    if (alert) {
-      expect(alert).not.toHaveTextContent(/too long/i);
-    }
+    expect(screen.getByTestId('create-clone-btn')).toBeDisabled();
   });
 
   it('passes the trimmed file to cloneVoice.mutateAsync, not the raw file', async () => {
@@ -149,6 +143,12 @@ describe('VoiceEditor Clone tab — AudioTrimmer integration', () => {
     // Simulate a very short recording (1s — still too short)
     act(() => {
       capturedOnRecordingComplete?.(new Blob(['audio'], { type: 'audio/wav' }), 1);
+    });
+
+    // AudioTrimmer is now shown for the recorded file; confirm with the same short duration
+    // so that validateDuration (which runs after the confirmedFile guard) fires.
+    act(() => {
+      capturedTrimmerOnConfirm?.(new File(['audio'], 'trimmed.wav', { type: 'audio/wav' }), 1);
     });
 
     await u.click(screen.getByTestId('create-clone-btn'));

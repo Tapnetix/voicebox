@@ -286,7 +286,7 @@ function CloneTabBody({
 
   // ── Create clone ──────────────────────────────────────────────────────────
   async function handleCreate() {
-    if (!sampleFile || !bookId || !charId) return;
+    if (!confirmedFile || !bookId || !charId) return;
 
     const validationError = validateDuration();
     if (validationError) {
@@ -296,8 +296,10 @@ function CloneTabBody({
 
     setCloneError(null);
 
-    // Use the trimmed file if the user confirmed the trimmer; fall back to the raw sample.
-    const fileToUpload = confirmedFile ?? sampleFile;
+    // Always upload the trimmed clip the user confirmed — Create is gated on
+    // confirmedFile, matching ProfileForm/SampleUpload (no raw-file fallback,
+    // so a sample can never exceed the backend reference cap).
+    const fileToUpload = confirmedFile;
 
     try {
       const profile = await cloneVoice.mutateAsync({
@@ -404,7 +406,7 @@ function CloneTabBody({
           <Button
             data-testid="create-clone-btn"
             onClick={handleCreate}
-            disabled={!sampleFile || cloneVoice.isPending}
+            disabled={!confirmedFile || cloneVoice.isPending}
             size="sm"
           >
             {cloneVoice.isPending

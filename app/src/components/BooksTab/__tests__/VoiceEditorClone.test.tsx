@@ -5,11 +5,15 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { VoiceEditor } from '@/components/BooksTab/VoiceEditor';
 
-// AudioTrimmer uses WaveSurfer / AudioContext — stub it out for this unit-test suite.
+// AudioTrimmer — captures onConfirm so tests can fire it with a trimmed file.
+// This matches the new contract: Create is gated on confirmedFile (onConfirm result).
+let capturedTrimmerOnConfirm: ((trimmed: File, durationSec: number) => void) | null = null;
+
 vi.mock('@/components/AudioTrimmer/AudioTrimmer', () => ({
-  AudioTrimmer: ({ file }: { file: File }) => (
-    <div data-testid="audio-trimmer">{file.name}</div>
-  ),
+  AudioTrimmer: ({ file: _file, onConfirm }: { file: File; onConfirm: (f: File, d: number) => void }) => {
+    capturedTrimmerOnConfirm = onConfirm;
+    return <div data-testid="audio-trimmer">{_file.name}</div>;
+  },
 }));
 
 const createClone = vi.fn().mockResolvedValue({ id: 'cloned-1', name: 'Mira (cloned)' });
@@ -54,10 +58,28 @@ vi.mock('@/lib/hooks/useAudioRecording', () => ({
 
 beforeEach(() => {
   vi.clearAllMocks();
+  capturedTrimmerOnConfirm = null;
   capturedOnRecordingComplete = null;
   createClone.mockResolvedValue({ id: 'cloned-1', name: 'Mira (cloned)' });
   previewMutate.mockReset();
 });
+
+/** Helper: upload a file and confirm the trimmer with a synthetic trimmed file */
+async function uploadAndConfirm(
+  u: ReturnType<typeof userEvent.setup>,
+  rawFile: File,
+  trimmedFile?: File,
+  trimDuration = 10,
+) {
+  const input = screen.getByTestId('clone-dropzone').querySelector('input[type=file]')!;
+  await u.upload(input as HTMLElement, rawFile);
+  // AudioTrimmer is now mounted; confirm with the trimmed file
+  const confirmed = trimmedFile ?? new File([new Uint8Array(8)], 'trimmed.wav', { type: 'audio/wav' });
+  act(() => {
+    capturedTrimmerOnConfirm?.(confirmed, trimDuration);
+  });
+  return confirmed;
+}
 
 describe('VoiceEditor (Clone)', () => {
   it('renders the clone tab panel with dropzone and record-btn', () => {
@@ -76,8 +98,7 @@ describe('VoiceEditor (Clone)', () => {
     const u = userEvent.setup();
     render(<VoiceEditor initialTab="clone" />);
     expect(screen.getByTestId('clone-dropzone')).toBeInTheDocument();
-    const input = screen.getByTestId('clone-dropzone').querySelector('input[type=file]')!;
-    await u.upload(input as HTMLElement, new File([new Uint8Array(16)], 'mira.wav', { type: 'audio/wav' }));
+    await uploadAndConfirm(u, new File([new Uint8Array(16)], 'mira.wav', { type: 'audio/wav' }));
     await u.click(screen.getByTestId('create-clone-btn'));
     expect(createClone).toHaveBeenCalled();
     expect(screen.getByTestId('assign-clone-btn')).toBeInTheDocument();
@@ -86,14 +107,18 @@ describe('VoiceEditor (Clone)', () => {
   it('calls createClone with bookId, charId, name, and file', async () => {
     const u = userEvent.setup();
     render(<VoiceEditor initialTab="clone" />);
-    const input = screen.getByTestId('clone-dropzone').querySelector('input[type=file]')!;
-    await u.upload(input as HTMLElement, new File([new Uint8Array(16)], 'sample.wav', { type: 'audio/wav' }));
+    const trimmedFile = new File([new Uint8Array(8)], 'trimmed-sample.wav', { type: 'audio/wav' });
+    await uploadAndConfirm(
+      u,
+      new File([new Uint8Array(16)], 'sample.wav', { type: 'audio/wav' }),
+      trimmedFile,
+    );
     await u.click(screen.getByTestId('create-clone-btn'));
     expect(createClone).toHaveBeenCalledWith(
       expect.objectContaining({
         bookId: 'b1',
         charId: 'm',
-        file: expect.any(File),
+        file: trimmedFile,
       }),
     );
   });
@@ -102,8 +127,7 @@ describe('VoiceEditor (Clone)', () => {
     const u = userEvent.setup();
     createClone.mockRejectedValueOnce(new Error('Backend clone error'));
     render(<VoiceEditor initialTab="clone" />);
-    const input = screen.getByTestId('clone-dropzone').querySelector('input[type=file]')!;
-    await u.upload(input as HTMLElement, new File([new Uint8Array(16)], 'bad.wav', { type: 'audio/wav' }));
+    await uploadAndConfirm(u, new File([new Uint8Array(16)], 'bad.wav', { type: 'audio/wav' }));
     await u.click(screen.getByTestId('create-clone-btn'));
     expect(await screen.findByRole('alert')).toHaveTextContent(/backend clone error/i);
   });
@@ -111,8 +135,7 @@ describe('VoiceEditor (Clone)', () => {
   it('shows preview-player and preview-voice-btn after clone created', async () => {
     const u = userEvent.setup();
     render(<VoiceEditor initialTab="clone" />);
-    const input = screen.getByTestId('clone-dropzone').querySelector('input[type=file]')!;
-    await u.upload(input as HTMLElement, new File([new Uint8Array(16)], 'mira.wav', { type: 'audio/wav' }));
+    await uploadAndConfirm(u, new File([new Uint8Array(16)], 'mira.wav', { type: 'audio/wav' }));
     await u.click(screen.getByTestId('create-clone-btn'));
     // preview-player is always shown; assign-clone-btn appears after clone
     expect(screen.getByTestId('preview-player')).toBeInTheDocument();
@@ -122,8 +145,7 @@ describe('VoiceEditor (Clone)', () => {
   it('assign-clone-btn calls updateMutate with profile_id from the created clone', async () => {
     const u = userEvent.setup();
     render(<VoiceEditor initialTab="clone" />);
-    const input = screen.getByTestId('clone-dropzone').querySelector('input[type=file]')!;
-    await u.upload(input as HTMLElement, new File([new Uint8Array(16)], 'mira.wav', { type: 'audio/wav' }));
+    await uploadAndConfirm(u, new File([new Uint8Array(16)], 'mira.wav', { type: 'audio/wav' }));
     await u.click(screen.getByTestId('create-clone-btn'));
     const assignBtn = await screen.findByTestId('assign-clone-btn');
     await u.click(assignBtn);
@@ -142,8 +164,7 @@ describe('VoiceEditor (Clone)', () => {
   it('clicking preview-voice-btn after clone triggers the preview mutation', async () => {
     const u = userEvent.setup();
     render(<VoiceEditor initialTab="clone" />);
-    const input = screen.getByTestId('clone-dropzone').querySelector('input[type=file]')!;
-    await u.upload(input as HTMLElement, new File([new Uint8Array(16)], 'mira.wav', { type: 'audio/wav' }));
+    await uploadAndConfirm(u, new File([new Uint8Array(16)], 'mira.wav', { type: 'audio/wav' }));
     await u.click(screen.getByTestId('create-clone-btn'));
 
     // onCloned auto-triggers preview once; record the call count before the btn click
@@ -168,6 +189,9 @@ describe('VoiceEditor (Clone)', () => {
   });
 
   // ── Fix 3: Duration guard (3–30 s) ───────────────────────────────────────
+  // validateDuration runs AFTER the confirmedFile guard inside handleCreate.
+  // So to exercise cloneTooShort via recording: record a short blob,
+  // then confirm the trimmer with the short duration, then click Create.
 
   it('shows cloneTooShort error when recorded sample is under 3 seconds', async () => {
     const u = userEvent.setup();
@@ -176,6 +200,11 @@ describe('VoiceEditor (Clone)', () => {
     // Simulate a recording that completes with duration = 1 s (too short)
     act(() => {
       capturedOnRecordingComplete?.(new Blob(['audio'], { type: 'audio/wav' }), 1);
+    });
+
+    // AudioTrimmer is now shown for the recorded file; confirm with the same short duration
+    act(() => {
+      capturedTrimmerOnConfirm?.(new File(['audio'], 'trimmed.wav', { type: 'audio/wav' }), 1);
     });
 
     await u.click(screen.getByTestId('create-clone-btn'));
@@ -193,9 +222,14 @@ describe('VoiceEditor (Clone)', () => {
       capturedOnRecordingComplete?.(new Blob(['audio'], { type: 'audio/wav' }), 35);
     });
 
+    // The trimmer is shown; confirm with a valid trim window (e.g. 20 s)
+    act(() => {
+      capturedTrimmerOnConfirm?.(new File(['audio'], 'trimmed.wav', { type: 'audio/wav' }), 20);
+    });
+
     await u.click(screen.getByTestId('create-clone-btn'));
 
-    // No "too long" alert; clone proceeds (the trimmer mock auto-passes)
+    // No "too long" alert; clone proceeds
     const alert = screen.queryByRole('alert');
     if (alert) {
       expect(alert).not.toHaveTextContent(/too long/i);
@@ -210,16 +244,24 @@ describe('VoiceEditor (Clone)', () => {
     act(() => {
       capturedOnRecordingComplete?.(new Blob(['audio'], { type: 'audio/wav' }), 3);
     });
+    act(() => {
+      capturedTrimmerOnConfirm?.(new File(['audio'], 'trimmed.wav', { type: 'audio/wav' }), 3);
+    });
     await u.click(screen.getByTestId('create-clone-btn'));
     expect(createClone).toHaveBeenCalled();
     unmount();
 
     // Test 30 s exactly (should pass)
     vi.clearAllMocks();
+    capturedTrimmerOnConfirm = null;
+    capturedOnRecordingComplete = null;
     createClone.mockResolvedValue({ id: 'cloned-1', name: 'Mira (cloned)' });
     render(<VoiceEditor initialTab="clone" />);
     act(() => {
       capturedOnRecordingComplete?.(new Blob(['audio'], { type: 'audio/wav' }), 30);
+    });
+    act(() => {
+      capturedTrimmerOnConfirm?.(new File(['audio'], 'trimmed.wav', { type: 'audio/wav' }), 30);
     });
     await u.click(screen.getByTestId('create-clone-btn'));
     expect(createClone).toHaveBeenCalled();
