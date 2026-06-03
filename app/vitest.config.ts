@@ -23,6 +23,8 @@ export default defineConfig({
         'src/stores/booksStore.ts',
         'src/lib/utils/audio.ts',
         'src/components/AudioTrimmer/**',
+        'src/components/VoiceProfiles/**',
+        'src/lib/hooks/useReferenceTranscript.ts',
       ],
     },
   },

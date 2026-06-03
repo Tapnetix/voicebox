@@ -559,8 +559,6 @@
     "fileLabel": "File: {{name}}",
     "play": "Play",
     "pause": "Pause",
-    "transcribe": "Transcribe",
-    "transcribing": "Transcribing…",
     "remove": "Remove",
     "startRecording": "Start Recording",
     "recordHint": "Click to start recording. Maximum duration: 30 seconds.",

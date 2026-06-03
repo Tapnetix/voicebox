@@ -342,8 +342,6 @@
     "fileLabel": "檔案:{{name}}",
     "play": "播放",
     "pause": "暫停",
-    "transcribe": "轉錄",
-    "transcribing": "轉錄中…",
     "remove": "移除",
     "startRecording": "開始錄製",
     "recordHint": "點選以開始錄製。最大時長:30 秒。",

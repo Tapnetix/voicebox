@@ -342,8 +342,6 @@
     "fileLabel": "ファイル:{{name}}",
     "play": "再生",
     "pause": "一時停止",
-    "transcribe": "文字起こし",
-    "transcribing": "文字起こし中…",
     "remove": "削除",
     "startRecording": "録音開始",
     "recordHint": "クリックして録音を開始します。最大時間:30 秒。",
