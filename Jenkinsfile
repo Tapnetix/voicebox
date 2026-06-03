@@ -126,29 +126,21 @@ pipeline {
                             export APPLE_SIGNING_IDENTITY="-"
                             ( cd tauri && bun run tauri build --bundles dmg < /dev/null )
 
-                            # Repackage the .dmg around a freshly ad-hoc-signed .app. This does not
-                            # rely on Tauri honouring "-": we mount the built dmg, deep-sign the .app
-                            # in place of an unsigned one, and rebuild the dmg from the same contents
-                            # (preserving the drag-to-Applications layout + background). Ad-hoc is
-                            # idempotent, so if Tauri already signed, this just re-affirms it.
-                            # (Set a real Developer ID + APPLE_ID/APPLE_PASSWORD/APPLE_TEAM_ID later
-                            # to notarize for a fully trusted, no-warning install.)
+                            # Tauri already signed the .app with the ad-hoc identity ("-") above and
+                            # bundled it into its OWN styled .dmg — drag-to-Applications symlink,
+                            # background, Finder window layout, and a blessed .VolumeIcon.icns. Ship
+                            # that dmg AS-IS. Do NOT rebuild it with `hdiutil create -srcfolder`: that
+                            # strips the layout/background and the volume-icon bless, producing the
+                            # bare, icon-less image we used to emit. Verify the signature only.
+                            # (For a fully trusted, no-warning install, set a real Developer ID +
+                            # APPLE_ID/APPLE_PASSWORD/APPLE_TEAM_ID and notarize the Tauri dmg here.)
                             DMG=$(find tauri/src-tauri/target/release/bundle/dmg -name "*.dmg" | head -1 || true)
-                            if [ -n "$DMG" ]; then
-                                MNT=$(mktemp -d); STAGE=$(mktemp -d)
-                                hdiutil attach "$DMG" -mountpoint "$MNT" -nobrowse -quiet
-                                cp -R "$MNT/." "$STAGE/"
-                                hdiutil detach "$MNT" -quiet
-                                APP=$(find "$STAGE" -maxdepth 1 -name "*.app" -type d | head -1)
-                                VOL=$(/usr/bin/basename "$APP" .app)
-                                codesign --force --deep --sign - "$APP"
+                            APP=$(find tauri/src-tauri/target/release/bundle/macos -maxdepth 1 -name "*.app" -type d | head -1 || true)
+                            if [ -n "$APP" ]; then
                                 codesign --verify --deep --strict "$APP" && echo "Signature: OK" || echo "Signature: INVALID"
                                 codesign -dvv "$APP" 2>&1 | grep -E "Signature|Identifier|Authority" || true
-                                rm -f "$DMG"
-                                hdiutil create -volname "$VOL" -srcfolder "$STAGE" -ov -format UDZO "$DMG"
-                                rm -rf "$STAGE"
-                                echo "=== Repackaged signed dmg: $(du -h "$DMG" | cut -f1) ==="
                             fi
+                            [ -n "$DMG" ] && echo "=== Tauri styled dmg: $(du -h "$DMG" | cut -f1) ==="
                         '''
                     }
                     post {
