@@ -59,6 +59,17 @@ vi.mock('@/lib/api/client', () => ({
   apiClient: { getBookAudioUrl: (id: string) => `http://localhost/audio/${id}` },
 }));
 
+vi.mock('@/lib/hooks/useReferenceTranscript', () => ({
+  useReferenceTranscript: () => ({
+    status: 'idle',
+    isTranscribing: false,
+    regeneratePrompt: false,
+    retranscribe: vi.fn(),
+    acceptRegenerate: vi.fn(),
+    keepEdits: vi.fn(),
+  }),
+}));
+
 vi.mock('@/lib/hooks/useAudioRecording', () => ({
   useAudioRecording: (opts: { maxDurationSeconds?: number; onRecordingComplete?: (blob: Blob, duration?: number) => void }) => {
     capturedOnRecordingComplete = opts.onRecordingComplete ?? null;

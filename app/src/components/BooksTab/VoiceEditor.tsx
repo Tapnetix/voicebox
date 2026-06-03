@@ -30,6 +30,8 @@ import { cn } from '@/lib/utils/cn';
 import { useBooksStore } from '@/stores/booksStore';
 import { toast } from '@/components/ui/use-toast';
 import { AudioTrimmer } from '@/components/AudioTrimmer/AudioTrimmer';
+import { useReferenceTranscript } from '@/lib/hooks/useReferenceTranscript';
+import { ReferenceTranscript } from '@/components/VoiceProfiles/ReferenceTranscript';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -223,6 +225,13 @@ function CloneTabBody({
   // cleared whenever a new raw sample is loaded.
   const [confirmedFile, setConfirmedFile] = useState<File | null>(null);
   const [voiceName, setVoiceName] = useState(`${charName} (cloned)`);
+  const [transcriptText, setTranscriptText] = useState('');
+  const transcript = useReferenceTranscript({
+    file: confirmedFile,
+    text: transcriptText,
+    setText: setTranscriptText,
+    // No language — Whisper auto-detect (clone tab has no language picker).
+  });
   const [cloneError, setCloneError] = useState<string | null>(null);
   const [clonedProfileId, setClonedProfileId] = useState<string | null>(null);
 
@@ -236,6 +245,7 @@ function CloneTabBody({
       setSampleFile(file);
       setSampleDuration(duration ?? null);
       setConfirmedFile(null);
+      setTranscriptText('');
       setClonedProfileId(null);
       setCloneError(null);
     },
@@ -260,6 +270,7 @@ function CloneTabBody({
     setClonedProfileId(null);
     setCloneError(null);
     setConfirmedFile(null);
+    setTranscriptText('');
 
     // Probe duration via AudioContext (async; we validate before upload)
     const url = URL.createObjectURL(file);
@@ -307,6 +318,7 @@ function CloneTabBody({
         charId,
         name: voiceName || `${charName} (cloned)`,
         file: fileToUpload,
+        referenceText: transcriptText,
       });
       setClonedProfileId(profile.id);
       onCloned(profile.id);
@@ -428,6 +440,20 @@ function CloneTabBody({
           />
         </div>
       )}
+
+      {/* Reference transcript — always visible; idle when no confirmed clip */}
+      <div className="mt-3">
+        <ReferenceTranscript
+          value={transcriptText}
+          onChange={setTranscriptText}
+          status={transcript.status}
+          isTranscribing={transcript.isTranscribing}
+          regeneratePrompt={transcript.regeneratePrompt}
+          onRetranscribe={transcript.retranscribe}
+          onAcceptRegenerate={transcript.acceptRegenerate}
+          onKeepEdits={transcript.keepEdits}
+        />
+      </div>
 
       {/* Inline error */}
       {cloneError && (

@@ -39,6 +39,17 @@ vi.mock('@/lib/api/client', () => ({
     getBookAudioUrl: (id: string) => `http://localhost/audio/${id}`,
   },
 }));
+
+vi.mock('@/lib/hooks/useReferenceTranscript', () => ({
+  useReferenceTranscript: () => ({
+    status: 'idle',
+    isTranscribing: false,
+    regeneratePrompt: false,
+    retranscribe: vi.fn(),
+    acceptRegenerate: vi.fn(),
+    keepEdits: vi.fn(),
+  }),
+}));
 // useAudioRecording needs PlatformProvider — mock it for unit tests.
 // Captures onRecordingComplete so tests can simulate recording completion with
 // custom durations to exercise the 3–30 s duration guard.

@@ -100,6 +100,17 @@ vi.mock('@/lib/api/client', () => ({
   },
 }));
 
+vi.mock('@/lib/hooks/useReferenceTranscript', () => ({
+  useReferenceTranscript: () => ({
+    status: 'idle',
+    isTranscribing: false,
+    regeneratePrompt: false,
+    retranscribe: vi.fn(),
+    acceptRegenerate: vi.fn(),
+    keepEdits: vi.fn(),
+  }),
+}));
+
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
 describe('VoiceEditor (Design)', () => {
