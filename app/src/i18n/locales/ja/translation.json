@@ -357,6 +357,16 @@
     "captureComplete": "キャプチャ完了",
     "captureAgain": "もう一度キャプチャ"
   },
+  "referenceTranscript": {
+    "label": "参照トランスクリプト",
+    "transcribing": "文字起こし中…",
+    "autoFilledHint": "✓ 自動入力 — 間違いがあれば修正してください",
+    "errorNote": "⚠ 自動文字起こしに失敗 — 内容を入力してください",
+    "retranscribe": "再文字起こし",
+    "regeneratePrompt": "クリップが変更されました。再生成しますか、編集を保持しますか？",
+    "regenerate": "再生成",
+    "keepEdits": "編集を保持"
+  },
   "sampleList": {
     "loading": "サンプルを読み込み中…",
     "empty": {

@@ -357,6 +357,16 @@
     "captureComplete": "捕获完成",
     "captureAgain": "重新捕获"
   },
+  "referenceTranscript": {
+    "label": "参考转录",
+    "transcribing": "正在转录…",
+    "autoFilledHint": "✓ 已自动填充 — 如有错误请修改",
+    "errorNote": "⚠ 无法自动转录 — 请手动输入",
+    "retranscribe": "重新转录",
+    "regeneratePrompt": "片段已更改。重新生成转录还是保留你的修改？",
+    "regenerate": "重新生成",
+    "keepEdits": "保留修改"
+  },
   "sampleList": {
     "loading": "加载样本中…",
     "empty": {

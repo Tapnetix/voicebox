@@ -574,6 +574,16 @@
     "captureComplete": "Capture complete",
     "captureAgain": "Capture Again"
   },
+  "referenceTranscript": {
+    "label": "Reference transcript",
+    "transcribing": "Transcribing…",
+    "autoFilledHint": "✓ Auto-filled — edit anything that's off",
+    "errorNote": "⚠ Couldn't auto-transcribe — type the words",
+    "retranscribe": "Re-transcribe",
+    "regeneratePrompt": "The clip changed. Regenerate the transcript or keep your edits?",
+    "regenerate": "Regenerate",
+    "keepEdits": "Keep my edits"
+  },
   "sampleList": {
     "loading": "Loading samples…",
     "empty": {
