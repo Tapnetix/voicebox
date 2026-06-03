@@ -463,6 +463,7 @@ export function useCloneVoiceForCharacter() {
       charId: string;
       name: string;
       file: File;
+      referenceText?: string;
     }) => {
       // bookId / charId are forwarded through `vars` so onSuccess can access
       // them via `variables.bookId` / `variables.charId` for cache invalidation
@@ -479,15 +480,12 @@ export function useCloneVoiceForCharacter() {
         voice_type: 'cloned',
       });
 
-      // Step 2: upload the sample file to the profile. The samples endpoint
-      // requires a non-empty reference_text (the transcript of the sample);
-      // an empty string is rejected with 422. Use a sensible default — the
-      // user can refine the sample/transcript later in the profiles UI.
-      await apiClient.addProfileSample(
-        profile.id,
-        vars.file,
-        'Reference voice sample for cloning.',
-      );
+      // Step 2: upload the sample. The samples endpoint rejects an empty
+      // reference_text with HTTP 422, so submit the user's real transcript on
+      // the normal path and fall back to the placeholder only when it is blank.
+      const PLACEHOLDER = 'Reference voice sample for cloning.';
+      const referenceText = vars.referenceText?.trim() ? vars.referenceText : PLACEHOLDER;
+      await apiClient.addProfileSample(profile.id, vars.file, referenceText);
 
       return profile;
     },
