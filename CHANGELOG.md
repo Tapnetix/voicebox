@@ -5,6 +5,17 @@
 
 # Changelog
 
+## [0.7.0] - 2026-06-03
+
+**In-app voice-clone trimmer.** Cloning no longer rejects long audio — drop in (or record) a clip of any length and pick the slice that gets cloned.
+
+### Trim any audio into a clean reference
+
+- **Waveform window picker.** Imported or recorded audio opens in a waveform trimmer (wavesurfer) with a draggable, resizable selection clamped to **15–45 seconds** — a quality-tuned range (best ~15–20s; a soft warning appears past ~30s, but cloning stays enabled).
+- **Auto-suggested window.** A sliding-window RMS pass pre-selects the cleanest, highest-energy span so a long source is usable in one click; long clips auto-expand the trimmer, in-range clips show a compact "ready" summary, and clips under 15s use the whole clip.
+- **Audition before you commit.** Region-scoped playback — play/pause, loop, seek, rewind — with a moving playhead lets you hear exactly the selected span before confirming.
+- **Only the slice is sent.** On confirm the selection is sliced and WAV-encoded client-side and uploaded as the reference (no API change), wired into all three clone entry points — voice profiles, sample upload, and audiobook character casting. The mic recording cap is raised 29s → 120s and the backend reference-audio ceiling 30s → 45s.
+
 ## [0.6.0] - 2026-05-29
 
 **The Audiobook release.** VoiceIt grows from a voice studio into a multi-voice audiobook producer. Drop in a book, and a local LLM reads it the way a director casts a play — finding every character, attributing each line of dialogue, and proposing a distinct voice for each speaker. Review the cast and fix any mis-attributed line by ear, generate the whole book chapter by chapter through the same serial TTS queue everything else uses, then export a chaptered M4B, a single MP3, or a per-chapter ZIP. Every step runs on your machine.
