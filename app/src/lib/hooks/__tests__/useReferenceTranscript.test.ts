@@ -108,4 +108,25 @@ describe('useReferenceTranscript', () => {
     act(() => h.result.current.retranscribe());
     await waitFor(() => expect(transcribeMutateAsync).toHaveBeenCalledTimes(2));
   });
+
+  it('resets to idle and fires no STT when the file becomes null', async () => {
+    const h = setup({ file: fileA });
+    await waitFor(() => expect(transcribeMutateAsync).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(h.result.current.status).toBe('filled'));
+    // Clearing the confirmed clip (cancel/remove) must reset to idle, not transcribe.
+    h.rerenderWith(null);
+    await waitFor(() => expect(h.result.current.status).toBe('idle'));
+    expect(h.result.current.regeneratePrompt).toBe(false);
+    expect(transcribeMutateAsync).toHaveBeenCalledTimes(1);
+  });
+
+  it('is a no-op when the same file identity re-renders (no re-transcribe)', async () => {
+    const h = setup({ file: fileA });
+    await waitFor(() => expect(transcribeMutateAsync).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(h.result.current.status).toBe('filled'));
+    // Same File reference re-render hits the identity early-exit guard.
+    h.rerenderWith(fileA);
+    await waitFor(() => expect(h.result.current.status).toBe('filled'));
+    expect(transcribeMutateAsync).toHaveBeenCalledTimes(1);
+  });
 });
