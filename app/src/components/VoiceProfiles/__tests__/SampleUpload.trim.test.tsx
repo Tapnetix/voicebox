@@ -37,10 +37,6 @@ vi.mock('@/lib/hooks/useProfiles', () => ({
   useProfile: () => ({ data: { id: 'p1', name: 'Test Profile', language: 'en' } }),
 }));
 
-vi.mock('@/lib/hooks/useTranscription', () => ({
-  useTranscription: () => ({ mutateAsync: vi.fn(), isPending: false }),
-}));
-
 vi.mock('@/lib/hooks/useAudioPlayer', () => ({
   useAudioPlayer: () => ({
     isPlaying: false,
@@ -89,6 +85,24 @@ vi.mock('@/components/ui/use-toast', () => ({
   useToast: () => ({ toast: vi.fn() }),
 }));
 
+// Single module-scope mock for useReferenceTranscript for the whole file.
+const hookArgs: Array<{ file: File | null }> = [];
+vi.mock('@/lib/hooks/useReferenceTranscript', () => ({
+  useReferenceTranscript: (args: { file: File | null; setText: (v: string) => void }) => {
+    hookArgs.push({ file: args.file });
+    // NOTE: deliberately does NOT call args.setText — the field stays user-controlled,
+    // so typed reference text is never overwritten by the mock.
+    return {
+      status: args.file ? 'filled' : 'idle',
+      isTranscribing: false,
+      regeneratePrompt: false,
+      retranscribe: vi.fn(),
+      acceptRegenerate: vi.fn(),
+      keepEdits: vi.fn(),
+    };
+  },
+}));
+
 // Import hooks for introspection
 import { useAudioRecording } from '@/lib/hooks/useAudioRecording';
 import { useSystemAudioCapture } from '@/lib/hooks/useSystemAudioCapture';
@@ -104,6 +118,7 @@ function renderSampleUpload(open = true) {
 beforeEach(() => {
   vi.clearAllMocks();
   addSampleMutateAsync.mockResolvedValue({});
+  hookArgs.length = 0;
 });
 
 // ---- tests ----
@@ -142,7 +157,7 @@ describe('SampleUpload — AudioTrimmer integration', () => {
     await screen.findByTestId('audio-trimmer');
 
     // Fill in reference text (required by the form schema)
-    const referenceTextarea = screen.getByPlaceholderText(/enter the exact text/i);
+    const referenceTextarea = screen.getByTestId('transcript-input');
     await u.type(referenceTextarea, 'Hello world this is my reference text');
 
     // Confirm the trim
@@ -188,5 +203,25 @@ describe('SampleUpload — AudioTrimmer integration', () => {
     expect((useAudioRecording as any)._lastMaxDuration).toBe(120);
     // Check useSystemAudioCapture was called with 120
     expect((useSystemAudioCapture as any)._lastMaxDuration).toBe(120);
+  });
+
+  it('T5: confirming the trim passes the trimmed file to useReferenceTranscript', async () => {
+    const u = userEvent.setup();
+    renderSampleUpload();
+
+    const fileInput = document.querySelector('input[type=file]') as HTMLInputElement;
+    const rawFile = new File(['raw-audio-data'], 'long-recording.wav', { type: 'audio/wav' });
+    await u.upload(fileInput, rawFile);
+
+    // Trimmer appears
+    await screen.findByTestId('audio-trimmer');
+
+    // Confirm the trim
+    await u.click(screen.getByTestId('trimmer-confirm'));
+
+    // Hook should have been called with the trimmed file
+    await waitFor(() =>
+      expect(hookArgs.some((a) => a.file?.name === 'reference-trimmed.wav')).toBe(true),
+    );
   });
 });

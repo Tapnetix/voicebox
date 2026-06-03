@@ -14,24 +14,21 @@ import {
 } from '@/components/ui/dialog';
 import {
   Form,
-  FormControl,
   FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
 } from '@/components/ui/form';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/components/ui/use-toast';
 import { useAudioPlayer } from '@/lib/hooks/useAudioPlayer';
 import { useAudioRecording } from '@/lib/hooks/useAudioRecording';
 import { useAddSample, useProfile } from '@/lib/hooks/useProfiles';
+import type { LanguageCode } from '@/lib/constants/languages';
+import { useReferenceTranscript } from '@/lib/hooks/useReferenceTranscript';
 import { useSystemAudioCapture } from '@/lib/hooks/useSystemAudioCapture';
-import { useTranscription } from '@/lib/hooks/useTranscription';
 import { usePlatform } from '@/platform/PlatformContext';
 import { AudioSampleRecording } from './AudioSampleRecording';
 import { AudioSampleSystem } from './AudioSampleSystem';
 import { AudioSampleUpload } from './AudioSampleUpload';
+import { ReferenceTranscript } from './ReferenceTranscript';
 
 const sampleSchema = z.object({
   file: z.instanceof(File, { message: 'Please select an audio file' }),
@@ -52,7 +49,6 @@ interface SampleUploadProps {
 export function SampleUpload({ profileId, open, onOpenChange }: SampleUploadProps) {
   const platform = usePlatform();
   const addSample = useAddSample();
-  const transcribe = useTranscription();
   const { data: profile } = useProfile(profileId);
   const { toast } = useToast();
   const [mode, setMode] = useState<'upload' | 'record' | 'system'>('upload');
@@ -67,6 +63,15 @@ export function SampleUpload({ profileId, open, onOpenChange }: SampleUploadProp
     defaultValues: {
       referenceText: '',
     },
+  });
+
+  const confirmedFile = form.watch('file');
+  const referenceText = form.watch('referenceText') ?? '';
+  const transcript = useReferenceTranscript({
+    file: confirmedFile ?? null,
+    text: referenceText,
+    setText: (v) => form.setValue('referenceText', v, { shouldValidate: true }),
+    language: profile?.language as LanguageCode | undefined,
   });
 
   const {
@@ -145,31 +150,6 @@ export function SampleUpload({ profileId, open, onOpenChange }: SampleUploadProp
       });
     }
   }, [systemRecordingError, toast]);
-
-  async function handleTranscribe() {
-    const file = form.getValues('file');
-    if (!file) {
-      toast({
-        title: 'No file selected',
-        description: 'Please select an audio file first.',
-        variant: 'destructive',
-      });
-      return;
-    }
-
-    try {
-      const language = profile?.language as 'en' | 'zh' | undefined;
-      const result = await transcribe.mutateAsync({ file, language });
-
-      form.setValue('referenceText', result.text, { shouldValidate: true });
-    } catch (error) {
-      toast({
-        title: 'Transcription failed',
-        description: error instanceof Error ? error.message : 'Failed to transcribe audio',
-        variant: 'destructive',
-      });
-    }
-  }
 
   async function onSubmit(data: SampleFormValues) {
     try {
@@ -276,10 +256,8 @@ export function SampleUpload({ profileId, open, onOpenChange }: SampleUploadProp
                           form.resetField('file');
                         }
                       }}
-                      onTranscribe={handleTranscribe}
                       onPlayPause={handlePlayPause}
                       isPlaying={isPlaying}
-                      isTranscribing={transcribe.isPending}
                       fieldName={name}
                     />
                   )}
@@ -304,10 +282,8 @@ export function SampleUpload({ profileId, open, onOpenChange }: SampleUploadProp
                       onStart={startRecording}
                       onStop={stopRecording}
                       onCancel={handleCancelRecording}
-                      onTranscribe={handleTranscribe}
                       onPlayPause={handlePlayPause}
                       isPlaying={isPlaying}
-                      isTranscribing={transcribe.isPending}
                     />
                   )}
                 />
@@ -332,10 +308,8 @@ export function SampleUpload({ profileId, open, onOpenChange }: SampleUploadProp
                         onStart={startSystemRecording}
                         onStop={stopSystemRecording}
                         onCancel={handleCancelRecording}
-                        onTranscribe={handleTranscribe}
                         onPlayPause={handlePlayPause}
                         isPlaying={isPlaying}
-                        isTranscribing={transcribe.isPending}
                       />
                     )}
                   />
@@ -349,22 +323,15 @@ export function SampleUpload({ profileId, open, onOpenChange }: SampleUploadProp
               )}
             </Tabs>
 
-            <FormField
-              control={form.control}
-              name="referenceText"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Reference Text</FormLabel>
-                  <FormControl>
-                    <Textarea
-                      placeholder="Enter the exact text spoken in the audio..."
-                      className="min-h-[100px]"
-                      {...field}
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
+            <ReferenceTranscript
+              value={referenceText}
+              onChange={(v) => form.setValue('referenceText', v, { shouldValidate: true })}
+              status={transcript.status}
+              isTranscribing={transcript.isTranscribing}
+              regeneratePrompt={transcript.regeneratePrompt}
+              onRetranscribe={transcript.retranscribe}
+              onAcceptRegenerate={transcript.acceptRegenerate}
+              onKeepEdits={transcript.keepEdits}
             />
 
             <div className="flex gap-2 justify-end">
