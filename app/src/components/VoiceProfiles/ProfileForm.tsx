@@ -925,7 +925,6 @@ export function ProfileForm() {
                                       onPlayPause={handlePlayPause}
                                       isPlaying={isPlaying}
                                       isValidating={isValidatingAudio}
-                                      isDisabled={false}
                                       fieldName={name}
                                     />
                                   )}

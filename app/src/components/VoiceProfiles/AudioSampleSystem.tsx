@@ -1,4 +1,4 @@
-import { Mic, Monitor, Pause, Play, Square } from 'lucide-react';
+import { Monitor, Pause, Play, Square } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import { FormControl, FormItem, FormMessage } from '@/components/ui/form';
@@ -11,10 +11,8 @@ interface AudioSampleSystemProps {
   onStart: () => void;
   onStop: () => void;
   onCancel: () => void;
-  onTranscribe: () => void;
   onPlayPause: () => void;
   isPlaying: boolean;
-  isTranscribing?: boolean;
 }
 
 export function AudioSampleSystem({
@@ -24,10 +22,8 @@ export function AudioSampleSystem({
   onStart,
   onStop,
   onCancel,
-  onTranscribe,
   onPlayPause,
   isPlaying,
-  isTranscribing = false,
 }: AudioSampleSystemProps) {
   const { t } = useTranslation();
   return (
@@ -89,16 +85,6 @@ export function AudioSampleSystem({
                   aria-label={isPlaying ? t('audioSample.pause') : t('audioSample.play')}
                 >
                   {isPlaying ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={onTranscribe}
-                  disabled={isTranscribing}
-                  className="flex items-center gap-2"
-                >
-                  <Mic className="h-4 w-4" />
-                  {isTranscribing ? t('audioSample.transcribing') : t('audioSample.transcribe')}
                 </Button>
                 <Button
                   type="button"

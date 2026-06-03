@@ -29,10 +29,8 @@ interface AudioSampleRecordingProps {
   onStart: () => void;
   onStop: () => void;
   onCancel: () => void;
-  onTranscribe: () => void;
   onPlayPause: () => void;
   isPlaying: boolean;
-  isTranscribing?: boolean;
   showWaveform?: boolean;
 }
 
@@ -43,10 +41,8 @@ export function AudioSampleRecording({
   onStart,
   onStop,
   onCancel,
-  onTranscribe,
   onPlayPause,
   isPlaying,
-  isTranscribing = false,
   showWaveform = true,
 }: AudioSampleRecordingProps) {
   const { t } = useTranslation();
@@ -143,16 +139,6 @@ export function AudioSampleRecording({
                   aria-label={isPlaying ? t('audioSample.pause') : t('audioSample.play')}
                 >
                   {isPlaying ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={onTranscribe}
-                  disabled={isTranscribing}
-                  className="flex items-center gap-2"
-                >
-                  <Mic className="h-4 w-4" />
-                  {isTranscribing ? t('audioSample.transcribing') : t('audioSample.transcribe')}
                 </Button>
                 <Button
                   type="button"

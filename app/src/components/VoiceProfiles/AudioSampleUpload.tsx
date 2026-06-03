@@ -1,4 +1,4 @@
-import { Mic, Pause, Play, Upload } from 'lucide-react';
+import { Pause, Play, Upload } from 'lucide-react';
 import { useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
@@ -7,24 +7,18 @@ import { FormControl, FormItem, FormMessage } from '@/components/ui/form';
 interface AudioSampleUploadProps {
   file: File | null | undefined;
   onFileChange: (file: File | undefined) => void;
-  onTranscribe: () => void;
   onPlayPause: () => void;
   isPlaying: boolean;
   isValidating?: boolean;
-  isTranscribing?: boolean;
-  isDisabled?: boolean;
   fieldName: string;
 }
 
 export function AudioSampleUpload({
   file,
   onFileChange,
-  onTranscribe,
   onPlayPause,
   isPlaying,
   isValidating = false,
-  isTranscribing = false,
-  isDisabled = false,
   fieldName,
 }: AudioSampleUploadProps) {
   const { t } = useTranslation();
@@ -117,16 +111,6 @@ export function AudioSampleUpload({
                     aria-label={isPlaying ? t('audioSample.pause') : t('audioSample.play')}
                   >
                     {isPlaying ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={onTranscribe}
-                    disabled={isTranscribing || isValidating || isDisabled}
-                    className="flex items-center gap-2"
-                  >
-                    <Mic className="h-4 w-4" />
-                    {isTranscribing ? t('audioSample.transcribing') : t('audioSample.transcribe')}
                   </Button>
                   <Button
                     type="button"
