@@ -50,7 +50,7 @@ import {
   useUploadAvatar,
 } from '@/lib/hooks/useProfiles';
 import { useSystemAudioCapture } from '@/lib/hooks/useSystemAudioCapture';
-import { useTranscription } from '@/lib/hooks/useTranscription';
+import { useReferenceTranscript } from '@/lib/hooks/useReferenceTranscript';
 import { getAudioDuration } from '@/lib/utils/audio';
 import { usePlatform } from '@/platform/PlatformContext';
 import { useServerStore } from '@/stores/serverStore';
@@ -59,6 +59,7 @@ import { AudioTrimmer } from '@/components/AudioTrimmer/AudioTrimmer';
 import { AudioSampleRecording } from './AudioSampleRecording';
 import { AudioSampleSystem } from './AudioSampleSystem';
 import { AudioSampleUpload } from './AudioSampleUpload';
+import { ReferenceTranscript } from './ReferenceTranscript';
 import { SampleList } from './SampleList';
 
 const PRESET_ONLY_ENGINES = new Set(['kokoro', 'qwen_custom_voice']);
@@ -145,7 +146,6 @@ export function ProfileForm() {
   const deleteProfile = useDeleteProfile();
   const uploadAvatar = useUploadAvatar();
   const deleteAvatar = useDeleteAvatar();
-  const transcribe = useTranscription();
   const { toast } = useToast();
   const [voiceSource, setVoiceSource] = useState<'clone' | 'builtin'>('clone');
   const [sampleMode, setSampleMode] = useState<'upload' | 'record' | 'system'>('record');
@@ -179,6 +179,14 @@ export function ProfileForm() {
 
   const selectedFile = form.watch('sampleFile');
   const selectedAvatarFile = form.watch('avatarFile');
+  const referenceText = form.watch('referenceText') ?? '';
+  const formLanguage = form.watch('language');
+  const transcript = useReferenceTranscript({
+    file: selectedFile ?? null,
+    text: referenceText,
+    setText: (v) => form.setValue('referenceText', v, { shouldValidate: true }),
+    language: formLanguage,
+  });
 
   // Validate raw file can be decoded (no longer reject based on duration —
   // long audio is handled by AudioTrimmer instead).
@@ -393,32 +401,6 @@ export function ProfileForm() {
       setSelectedPresetVoiceId('');
     }
   }, [presetVoices, selectedPresetVoiceId]);
-  async function handleTranscribe() {
-    const file = form.getValues('sampleFile');
-    if (!file) {
-      toast({
-        title: t('profileForm.toast.noFile'),
-        description: t('profileForm.toast.noFileDescription'),
-        variant: 'destructive',
-      });
-      return;
-    }
-
-    try {
-      const language = form.getValues('language');
-      const result = await transcribe.mutateAsync({ file, language });
-
-      form.setValue('referenceText', result.text, { shouldValidate: true });
-    } catch (error) {
-      toast({
-        title: t('profileForm.toast.transcribeFailed'),
-        description:
-          error instanceof Error ? error.message : t('profileForm.toast.transcribeFailedFallback'),
-        variant: 'destructive',
-      });
-    }
-  }
-
   function handleCancelRecording() {
     if (sampleMode === 'record') {
       cancelRecording();
@@ -940,11 +922,9 @@ export function ProfileForm() {
                                         // Clear any previously confirmed trimmed file
                                         form.setValue('sampleFile', undefined);
                                       }}
-                                      onTranscribe={handleTranscribe}
                                       onPlayPause={handlePlayPause}
                                       isPlaying={isPlaying}
                                       isValidating={isValidatingAudio}
-                                      isTranscribing={transcribe.isPending}
                                       isDisabled={false}
                                       fieldName={name}
                                     />
@@ -973,10 +953,8 @@ export function ProfileForm() {
                                       onStart={startRecording}
                                       onStop={stopRecording}
                                       onCancel={handleCancelRecording}
-                                      onTranscribe={handleTranscribe}
                                       onPlayPause={handlePlayPause}
                                       isPlaying={isPlaying}
-                                      isTranscribing={transcribe.isPending}
                                     />
                                   )}
                                 />
@@ -1006,10 +984,8 @@ export function ProfileForm() {
                                         onStart={startSystemRecording}
                                         onStop={stopSystemRecording}
                                         onCancel={handleCancelRecording}
-                                        onTranscribe={handleTranscribe}
                                         onPlayPause={handlePlayPause}
                                         isPlaying={isPlaying}
-                                        isTranscribing={transcribe.isPending}
                                       />
                                     )}
                                   />
@@ -1018,25 +994,17 @@ export function ProfileForm() {
                             )}
                           </Tabs>
 
-                          <FormField
-                            control={form.control}
-                            name="referenceText"
-                            render={({ field }) => (
-                              <FormItem>
-                                <FormLabel>{t('profileForm.fields.referenceText')}</FormLabel>
-                                <FormControl>
-                                  <Textarea
-                                    placeholder={t('profileForm.fields.referenceTextPlaceholder')}
-                                    className="min-h-[100px]"
-                                    {...field}
-                                  />
-                                </FormControl>
-                                <FormDescription>
-                                  {t('profileForm.fields.referenceTextHint')}
-                                </FormDescription>
-                                <FormMessage />
-                              </FormItem>
-                            )}
+                          <ReferenceTranscript
+                            value={referenceText}
+                            onChange={(v) =>
+                              form.setValue('referenceText', v, { shouldValidate: true })
+                            }
+                            status={transcript.status}
+                            isTranscribing={transcript.isTranscribing}
+                            regeneratePrompt={transcript.regeneratePrompt}
+                            onRetranscribe={transcript.retranscribe}
+                            onAcceptRegenerate={transcript.acceptRegenerate}
+                            onKeepEdits={transcript.keepEdits}
                           />
                         </>
                       )}

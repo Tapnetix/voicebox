@@ -35,6 +35,25 @@ vi.mock('@/lib/utils/audio', async (importOriginal) => {
   };
 });
 
+// ── useReferenceTranscript mock ───────────────────────────────────────────────
+// Single module-scope mock for the whole file.
+const hookArgs: Array<{ file: File | null }> = [];
+vi.mock('@/lib/hooks/useReferenceTranscript', () => ({
+  useReferenceTranscript: (args: { file: File | null; setText: (v: string) => void }) => {
+    hookArgs.push({ file: args.file });
+    // NOTE: deliberately does NOT call args.setText — the field stays user-controlled,
+    // so typed reference text is never overwritten by the mock.
+    return {
+      status: args.file ? 'filled' : 'idle',
+      isTranscribing: false,
+      regeneratePrompt: false,
+      retranscribe: vi.fn(),
+      acceptRegenerate: vi.fn(),
+      keepEdits: vi.fn(),
+    };
+  },
+}));
+
 // ── Hooks mocks ───────────────────────────────────────────────────────────────
 const createProfileMutateAsync = vi.fn().mockResolvedValue({ id: 'new-profile-1' });
 const addSampleMutateAsync = vi.fn().mockResolvedValue({});
@@ -80,6 +99,8 @@ vi.mock('@/lib/hooks/useAudioPlayer', () => ({
   }),
 }));
 
+// useTranscription is still needed by useReferenceTranscript internally,
+// but ProfileForm no longer calls it directly.
 vi.mock('@/lib/hooks/useTranscription', () => ({
   useTranscription: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }));
@@ -145,11 +166,9 @@ vi.mock('@/components/VoiceProfiles/AudioSampleUpload', () => ({
   }: {
     file: File | undefined;
     onFileChange: (f: File) => void;
-    onTranscribe: () => void;
     onPlayPause: () => void;
     isPlaying: boolean;
     isValidating: boolean;
-    isTranscribing: boolean;
     isDisabled: boolean;
     fieldName: string;
   }) => (
@@ -179,6 +198,7 @@ import { ProfileForm } from '@/components/VoiceProfiles/ProfileForm';
 
 beforeEach(() => {
   vi.clearAllMocks();
+  hookArgs.length = 0;
   audioDurationContainer.value = 20;
   createProfileMutateAsync.mockResolvedValue({ id: 'new-profile-1' });
   addSampleMutateAsync.mockResolvedValue({});
@@ -236,7 +256,7 @@ describe('ProfileForm trim flow', () => {
     const nameInput = screen.getByPlaceholderText(/my voice/i);
     await userEvent.type(nameInput, 'Test Voice');
 
-    const referenceTextArea = screen.getByPlaceholderText(/enter the exact text/i);
+    const referenceTextArea = screen.getByTestId('transcript-input');
     await userEvent.type(referenceTextArea, 'This is the reference text');
 
     // Submit the form
@@ -257,5 +277,29 @@ describe('ProfileForm trim flow', () => {
     const callArg = addSampleMutateAsync.mock.calls[0]?.[0];
     expect(callArg?.file?.name).not.toBe('interview.wav');
     expect(callArg?.file?.name).toBe('reference-trimmed.wav');
+  });
+
+  it('passes the trimmed file to useReferenceTranscript after confirm', async () => {
+    audioDurationContainer.value = 90;
+    (getAudioDuration as ReturnType<typeof vi.fn>).mockResolvedValue(90);
+
+    render(<ProfileForm />);
+
+    // Switch to Upload tab
+    const uploadTab = screen.getByRole('tab', { name: /upload/i });
+    await userEvent.click(uploadTab);
+
+    const input = screen.getByTestId('upload-file-input');
+    const originalFile = new File(['original-data'], 'interview.wav', { type: 'audio/wav' });
+    await userEvent.upload(input, originalFile);
+
+    // AudioTrimmer appears — click confirm to set the trimmed file
+    const confirmBtn = await screen.findByTestId('trimmer-confirm');
+    await userEvent.click(confirmBtn);
+
+    // After confirming, the hook should have received the trimmed file
+    await waitFor(() =>
+      expect(hookArgs.some((a) => a.file?.name === 'reference-trimmed.wav')).toBe(true),
+    );
   });
 });
