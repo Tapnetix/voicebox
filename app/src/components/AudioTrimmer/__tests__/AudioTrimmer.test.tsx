@@ -1,5 +1,5 @@
 import '@/i18n';
-import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 
 // --- mocks ---
@@ -66,7 +66,19 @@ vi.mock('wavesurfer.js/dist/plugins/regions.js', () => {
 });
 
 import { decodeAudioFile } from '@/lib/utils/audio';
-import { AudioTrimmer } from '../AudioTrimmer';
+import { AudioTrimmer, placeWindow } from '../AudioTrimmer';
+
+describe('placeWindow (pure selection geometry)', () => {
+  it('anchors a window at the given start, clamped to the clip end', () => {
+    expect(placeWindow(0, 20, 192)).toEqual({ start: 0, end: 20 });
+    expect(placeWindow(134.4, 20, 192)).toEqual({ start: 134.4, end: 154.4 });
+    // Past the end → shifts back so the window still fits.
+    expect(placeWindow(190, 20, 192)).toEqual({ start: 172, end: 192 });
+    // Length clamped to [15,45].
+    expect(placeWindow(0, 5, 192)).toEqual({ start: 0, end: 15 });
+    expect(placeWindow(0, 60, 192)).toEqual({ start: 0, end: 45 });
+  });
+});
 
 const makeFile = (name = 'interview.wav') => new File(['data'], name, { type: 'audio/wav' });
 
@@ -119,21 +131,27 @@ describe('AudioTrimmer', () => {
     expect(mockWs.instance!.setTime).toHaveBeenCalledWith(42);
   });
 
-  it('S4b: clicking the waveform moves the window to start at the clicked time', async () => {
-    (decodeAudioFile as any).mockResolvedValue(fakeBuffer(192));
+  it('S4b: clicking the waveform moves the selection window to start at the clicked time', async () => {
+    (decodeAudioFile as any).mockResolvedValue(fakeBuffer(192)); // 3:12
     render(<AudioTrimmer file={makeFile()} onConfirm={vi.fn()} />);
-    await screen.findByTestId('trimmer-play');
-    // Default window is 0:00–0:20; clicking at 120s places a 20s window at 2:00.
-    fireEvent.click(screen.getByTestId('trimmer-play')); // confirm default start = 0
-    expect(mockWs.instance!.setTime).toHaveBeenCalledWith(0);
-    mockWs.instance!.setTime.mockClear();
-    // Simulate a user click on the waveform at 120s (wavesurfer 'interaction').
-    act(() => mockWs.fire!('interaction', 120));
+    const track = await screen.findByTestId('trimmer-waveform');
+    // jsdom has no layout — give the track a real rect so px↔time maths work.
+    track.getBoundingClientRect = () =>
+      ({ left: 0, top: 0, right: 300, bottom: 80, width: 300, height: 80, x: 0, y: 0, toJSON() {} }) as DOMRect;
+    // Click at 70% width → 0.7 * 192s ≈ 134s; a 20s window lands at ~2:14–2:34.
+    fireEvent.click(track, { clientX: 210, clientY: 40 });
     await waitFor(() =>
-      expect(screen.getByTestId('trimmer-selection')).toHaveTextContent(/2:00\s*–\s*2:20/),
+      expect(screen.getByTestId('trimmer-selection')).toHaveTextContent(/2:14\s*–\s*2:34/),
     );
+    // And the on-screen region BOX is positioned from the same state (left ≈ 70%).
+    const box = screen.getByTestId('trimmer-region');
+    const left = parseFloat((box as HTMLElement).style.left);
+    expect(left).toBeGreaterThan(65);
+    expect(left).toBeLessThan(75);
+    // Play auditions from the (new) window start.
+    mockWs.instance!.setTime.mockClear();
     fireEvent.click(screen.getByTestId('trimmer-play'));
-    expect(mockWs.instance!.setTime).toHaveBeenCalledWith(120);
+    expect(mockWs.instance!.setTime).toHaveBeenCalledWith(expect.closeTo(134.4, 1));
   });
 
   it('S5: an in-range clip rests collapsed and expands on demand', async () => {

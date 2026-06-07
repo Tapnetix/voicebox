@@ -332,6 +332,7 @@ export function SampleUpload({ profileId, open, onOpenChange }: SampleUploadProp
               onRetranscribe={transcript.retranscribe}
               onAcceptRegenerate={transcript.acceptRegenerate}
               onKeepEdits={transcript.keepEdits}
+              hasClip={!!confirmedFile}
             />
 
             <div className="flex gap-2 justify-end">

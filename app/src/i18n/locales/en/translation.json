@@ -574,6 +574,7 @@
   },
   "referenceTranscript": {
     "label": "Reference transcript",
+    "confirmClipHint": "Pick a window above and press \"Use this clip\" to transcribe it.",
     "transcribing": "Transcribing…",
     "downloadingModel": "Downloading speech model (one-time)…",
     "autoFilledHint": "✓ Auto-filled — edit anything that's off",

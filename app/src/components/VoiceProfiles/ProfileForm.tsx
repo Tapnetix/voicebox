@@ -731,6 +731,12 @@ export function ProfileForm() {
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="max-w-none w-screen h-screen left-0 top-0 translate-x-0 translate-y-0 rounded-none p-6 overflow-hidden">
+        {/* Window drag strip: a modal Radix dialog sets body pointer-events:none,
+            which disables the app's global title-bar drag region. This strip lives
+            INSIDE the dialog (pointer-events:auto) so the OS window can still be
+            moved while the full-screen dialog is open. It sits behind the header
+            content + close button, so only empty title-bar space initiates a drag. */}
+        <div data-tauri-drag-region className="absolute inset-x-0 top-0 h-8 z-0" />
         <div className="max-w-5xl h-[85vh] mx-auto my-auto w-full flex flex-col overflow-hidden">
           <DialogHeader>
             <DialogTitle className="text-2xl">
@@ -1004,6 +1010,7 @@ export function ProfileForm() {
                             onRetranscribe={transcript.retranscribe}
                             onAcceptRegenerate={transcript.acceptRegenerate}
                             onKeepEdits={transcript.keepEdits}
+                            hasClip={!!selectedFile}
                           />
                         </>
                       )}

@@ -14,6 +14,9 @@ export interface ReferenceTranscriptProps {
   onAcceptRegenerate: () => void;
   onKeepEdits: () => void;
   label?: string;
+  /** Whether a trimmed clip has been confirmed. When false, Re-transcribe is
+   *  disabled (there is nothing to transcribe yet) with a hint to confirm one. */
+  hasClip?: boolean;
 }
 
 export function ReferenceTranscript({
@@ -26,6 +29,7 @@ export function ReferenceTranscript({
   onAcceptRegenerate,
   onKeepEdits,
   label,
+  hasClip = true,
 }: ReferenceTranscriptProps) {
   const { t } = useTranslation();
 
@@ -41,7 +45,8 @@ export function ReferenceTranscript({
           size="sm"
           data-testid="transcript-retranscribe"
           onClick={onRetranscribe}
-          disabled={isTranscribing}
+          disabled={isTranscribing || !hasClip}
+          title={!hasClip ? t('referenceTranscript.confirmClipHint') : undefined}
           className="flex items-center gap-1.5"
         >
           <Mic className="h-3.5 w-3.5" />
@@ -57,6 +62,12 @@ export function ReferenceTranscript({
         value={value}
         onChange={(e) => onChange(e.target.value)}
       />
+
+      {!hasClip && status === 'idle' && (
+        <p data-testid="transcript-need-clip" className="text-xs text-muted-foreground">
+          {t('referenceTranscript.confirmClipHint')}
+        </p>
+      )}
 
       {status === 'transcribing' && (
         <p

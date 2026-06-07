@@ -85,4 +85,16 @@ describe('ReferenceTranscript', () => {
     expect(screen.getByTestId('transcript-retranscribe')).toBeDisabled();
     expect(screen.getByTestId('transcript-input')).not.toBeDisabled();
   });
+
+  it('disables Re-transcribe and shows a hint until a clip is confirmed (hasClip=false)', () => {
+    render(<ReferenceTranscript {...baseProps} status="idle" hasClip={false} />);
+    expect(screen.getByTestId('transcript-retranscribe')).toBeDisabled();
+    expect(screen.getByTestId('transcript-need-clip')).toBeInTheDocument();
+  });
+
+  it('enables Re-transcribe once a clip is confirmed (hasClip=true)', () => {
+    render(<ReferenceTranscript {...baseProps} status="filled" value="words" hasClip />);
+    expect(screen.getByTestId('transcript-retranscribe')).not.toBeDisabled();
+    expect(screen.queryByTestId('transcript-need-clip')).not.toBeInTheDocument();
+  });
 });

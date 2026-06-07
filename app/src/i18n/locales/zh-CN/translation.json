@@ -357,6 +357,7 @@
   },
   "referenceTranscript": {
     "label": "参考转录",
+    "confirmClipHint": "在上方选择一个窗口并点击“使用此片段”进行转录。",
     "transcribing": "正在转录…",
     "downloadingModel": "正在下载语音模型（仅首次）…",
     "autoFilledHint": "✓ 已自动填充 — 如有错误请修改",

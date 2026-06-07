@@ -2,7 +2,6 @@ import { Repeat, SkipBack, Play, Pause, Wand2, ChevronDown } from 'lucide-react'
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import WaveSurfer from 'wavesurfer.js';
-import RegionsPlugin from 'wavesurfer.js/dist/plugins/regions.js';
 import { Button } from '@/components/ui/button';
 import {
   decodeAudioFile,
@@ -34,7 +33,7 @@ interface Region {
 }
 
 // ---------------------------------------------------------------------------
-// Helpers
+// Helpers (pure — unit-tested without wavesurfer/DOM)
 // ---------------------------------------------------------------------------
 
 function clamp(v: number, lo: number, hi: number) {
@@ -46,6 +45,18 @@ function chipLabelKey(classification: 'ideal' | 'neutral' | 'warn'): string {
   if (classification === 'ideal') return 'trimmer.chipIdeal';
   if (classification === 'neutral') return 'trimmer.chipNeutral';
   return 'trimmer.chipLonger';
+}
+
+/**
+ * Place a window of `len` seconds anchored at `startTime`, clamped so it fits
+ * inside [0, duration] and respects WINDOW_MIN/MAX. The selection is driven
+ * entirely by React state through this function, so the on-screen box (rendered
+ * from state) and the displayed selection can never disagree.
+ */
+export function placeWindow(startTime: number, len: number, duration: number): Region {
+  const l = clamp(len, WINDOW_MIN, Math.max(WINDOW_MIN, Math.min(WINDOW_MAX, duration)));
+  const start = clamp(startTime, 0, Math.max(0, duration - l));
+  return { start, end: start + l };
 }
 
 // ---------------------------------------------------------------------------
@@ -64,64 +75,68 @@ export function AudioTrimmer({ file, onConfirm, expandedByDefault }: AudioTrimme
 
   // ---- refs ----
   const bufferRef = useRef<AudioBuffer | null>(null);
-  const waveformRef = useRef<HTMLDivElement>(null);
+  const waveformRef = useRef<HTMLDivElement>(null); // wavesurfer mounts here (display only)
+  const trackRef = useRef<HTMLDivElement>(null); // positioning context for px<->time
   const wavesurferRef = useRef<WaveSurfer | null>(null);
-  const regionsPluginRef = useRef<ReturnType<typeof RegionsPlugin.create> | null>(null);
-  const wsRegionRef = useRef<any>(null);
   const regionRef = useRef<Region>(region);
   const isLoopingRef = useRef(false);
+  const durationRef = useRef(0);
   const objectUrlRef = useRef<string | null>(null);
 
-  // Keep refs in sync with state
+  // Keep refs in sync with state for use inside event callbacks.
   regionRef.current = region;
   isLoopingRef.current = isLooping;
+  durationRef.current = duration;
 
   // ---- decode on file change ----
   useEffect(() => {
     let cancelled = false;
     setMode('loading');
 
-    decodeAudioFile(file).then((buffer) => {
-      if (cancelled) return;
-      bufferRef.current = buffer;
-      const dur = buffer.duration;
-      setDuration(dur);
+    decodeAudioFile(file)
+      .then((buffer) => {
+        if (cancelled) return;
+        bufferRef.current = buffer;
+        const dur = buffer.duration;
+        setDuration(dur);
 
-      if (dur < WINDOW_MIN) {
-        // Short clip — whole-clip passthrough
-        setMode('whole-clip');
-        setRegion({ start: 0, end: dur });
-      } else if (dur <= WINDOW_MAX) {
-        // In-range — collapsed by default, expanded if caller sets expandedByDefault
-        setRegion({ start: 0, end: dur });
-        setMode(expandedByDefault === true ? 'expanded' : 'collapsed');
-      } else {
-        // Long source — auto-expand with the window anchored at the START of the
-        // clip. Predictable: the user sees a window over the beginning and moves
-        // it where they want. "Auto-suggest" stays as an opt-in to jump to the
-        // highest-energy span.
-        setRegion({ start: 0, end: WINDOW_DEFAULT });
-        setMode('expanded');
-      }
-    }).catch(() => {
-      if (!cancelled) setMode('whole-clip');
-    });
+        if (dur < WINDOW_MIN) {
+          // Short clip — whole-clip passthrough
+          setMode('whole-clip');
+          setRegion({ start: 0, end: dur });
+        } else if (dur <= WINDOW_MAX) {
+          // In-range — collapsed by default, expanded if caller sets expandedByDefault
+          setRegion({ start: 0, end: dur });
+          setMode(expandedByDefault === true ? 'expanded' : 'collapsed');
+        } else {
+          // Long source — anchor the window at the START of the clip (predictable);
+          // "Auto-suggest" is the opt-in to jump to the highest-energy span.
+          setRegion({ start: 0, end: WINDOW_DEFAULT });
+          setMode('expanded');
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setMode('whole-clip');
+      });
 
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [file, expandedByDefault]);
 
-  // ---- wavesurfer init / teardown when mode becomes expanded or whole-clip ----
+  // ---- wavesurfer init / teardown (waveform render + playback ONLY) ----
   useEffect(() => {
     if (mode !== 'expanded' && mode !== 'whole-clip') return;
     const container = waveformRef.current;
     if (!container) return;
 
-    // Clean up any previous instance
     if (wavesurferRef.current) {
-      try { wavesurferRef.current.destroy(); } catch (_) { /* ignore */ }
+      try {
+        wavesurferRef.current.destroy();
+      } catch (_) {
+        /* ignore */
+      }
       wavesurferRef.current = null;
-      regionsPluginRef.current = null;
-      wsRegionRef.current = null;
     }
 
     const root = document.documentElement;
@@ -129,9 +144,6 @@ export function AudioTrimmer({ file, onConfirm, expandedByDefault }: AudioTrimme
       const val = getComputedStyle(root).getPropertyValue(v).trim();
       return val ? `hsl(${val})` : '#888';
     };
-
-    const regPlugin = RegionsPlugin.create();
-    regionsPluginRef.current = regPlugin;
 
     const ws = WaveSurfer.create({
       container,
@@ -142,109 +154,46 @@ export function AudioTrimmer({ file, onConfirm, expandedByDefault }: AudioTrimme
       barRadius: 2,
       height: 80,
       normalize: true,
-      interact: true,
+      interact: false, // selection is handled by our own overlay, not wavesurfer seeking
       backend: 'WebAudio',
     });
-
-    ws.registerPlugin(regPlugin);
     wavesurferRef.current = ws;
 
-    // When ready, add the region (only for expanded mode)
-    ws.on('ready', () => {
-      if (mode !== 'expanded') return;
-      const reg = regionsPluginRef.current;
-      if (!reg) return;
-      const { start, end } = regionRef.current;
-      const wsReg = reg.addRegion({
-        start,
-        end,
-        drag: true,
-        resize: true,
-        color: 'rgba(212,175,55,0.25)',
-      });
-      wsRegionRef.current = wsReg;
-
-      // Clamp region updates
-      wsReg.on('update', () => {
-        const r = wsRegionRef.current;
-        if (!r) return;
-        const rawLen = r.end - r.start;
-        const maxEnd = bufferRef.current?.duration ?? WINDOW_MAX;
-        if (rawLen < WINDOW_MIN) {
-          const clamped = clamp(r.start, 0, maxEnd - WINDOW_MIN);
-          r.setOptions({ start: clamped, end: clamped + WINDOW_MIN });
-        } else if (rawLen > WINDOW_MAX) {
-          r.setOptions({ end: r.start + WINDOW_MAX });
-        }
-        setRegion({ start: r.start, end: r.end });
-      });
-      wsReg.on('update-end', () => {
-        const r = wsRegionRef.current;
-        if (!r) return;
-        setRegion({ start: r.start, end: r.end });
-      });
-    });
-
-    // Time-update for region-scoped loop / auto-stop
+    // Region-scoped loop / auto-stop at the selection end.
     ws.on('timeupdate', (time: number) => {
-      const { end } = regionRef.current;
+      const { start, end } = regionRef.current;
       if (time >= end) {
         if (isLoopingRef.current) {
-          ws.setTime(regionRef.current.start);
+          ws.setTime(start);
         } else {
           ws.pause();
           setIsPlaying(false);
         }
       }
     });
-
     ws.on('play', () => setIsPlaying(true));
     ws.on('pause', () => setIsPlaying(false));
 
-    // Click-to-place: clicking the waveform (outside the region) moves the
-    // selection window to START at the clicked time, keeping the current length.
-    // Fires only on user clicks on the bare waveform — the region overlay
-    // handles its own drag/resize. This is the intuitive "put the window here".
-    ws.on('interaction', (time: number) => {
-      if (mode !== 'expanded') return;
-      const cur = regionRef.current;
-      const len = cur.end - cur.start;
-      const maxEnd = bufferRef.current?.duration ?? WINDOW_MAX;
-      const start = clamp(time, 0, Math.max(0, maxEnd - len));
-      const end = Math.min(maxEnd, start + len);
-      setRegion({ start, end });
-    });
-
-    // Load the file
     const url = URL.createObjectURL(file);
     objectUrlRef.current = url;
-    ws.load(url).catch(() => { /* ignore in tests */ });
+    ws.load(url).catch(() => {
+      /* ignore in tests */
+    });
 
     return () => {
-      try { ws.destroy(); } catch (_) { /* ignore */ }
+      try {
+        ws.destroy();
+      } catch (_) {
+        /* ignore */
+      }
       wavesurferRef.current = null;
-      regionsPluginRef.current = null;
-      wsRegionRef.current = null;
       if (objectUrlRef.current) {
         URL.revokeObjectURL(objectUrlRef.current);
         objectUrlRef.current = null;
       }
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode]);
-
-  // Keep the on-screen region in sync with `region` state for PROGRAMMATIC
-  // changes (slider, click-to-place, auto-suggest). Value-compared so it does
-  // not fight the drag 'update' handler (which sets state FROM the region) — a
-  // user drag leaves wsReg already matching, so this skips and no loop forms.
-  useEffect(() => {
-    if (mode !== 'expanded') return;
-    const wsReg = wsRegionRef.current;
-    if (!wsReg) return;
-    if (Math.abs(wsReg.start - region.start) > 0.01 || Math.abs(wsReg.end - region.end) > 0.01) {
-      wsReg.setOptions({ start: region.start, end: region.end });
-    }
-  }, [region, mode]);
 
   // ---- transport handlers ----
   const handlePlay = useCallback(() => {
@@ -259,39 +208,107 @@ export function AudioTrimmer({ file, onConfirm, expandedByDefault }: AudioTrimme
   }, [isPlaying]);
 
   const handleRewind = useCallback(() => {
-    const ws = wavesurferRef.current;
-    if (!ws) return;
-    ws.setTime(regionRef.current.start);
+    wavesurferRef.current?.setTime(regionRef.current.start);
   }, []);
 
-  const handleLoop = useCallback(() => {
-    setIsLooping((prev) => !prev);
-  }, []);
+  const handleLoop = useCallback(() => setIsLooping((prev) => !prev), []);
 
-  // ---- length slider ----
+  // ---- length slider (pure state; the box re-renders from state) ----
   const handleLengthChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const newLen = clamp(Number(e.target.value), WINDOW_MIN, WINDOW_MAX);
-    const buffer = bufferRef.current;
-    const maxEnd = buffer?.duration ?? WINDOW_MAX;
-    let newEnd = regionRef.current.start + newLen;
-    let newStart = regionRef.current.start;
-    if (newEnd > maxEnd) {
-      newEnd = maxEnd;
-      newStart = Math.max(0, maxEnd - newLen);
-    }
-    setRegion({ start: newStart, end: newEnd });
-    // The region-sync effect repositions the on-screen region from state.
+    setRegion(placeWindow(regionRef.current.start, newLen, durationRef.current));
   }, []);
 
-  // ---- auto-suggest ----
+  // ---- auto-suggest (opt-in: jump to the highest-energy span) ----
   const handleAutoSuggest = useCallback(() => {
     const buffer = bufferRef.current;
     if (!buffer) return;
     const len = Math.round(regionRef.current.end - regionRef.current.start);
-    const suggested = suggestWindow(buffer, len);
-    setRegion(suggested);
-    // The region-sync effect repositions the on-screen region from state.
+    setRegion(suggestWindow(buffer, len));
   }, []);
+
+  // ---- pointer interaction on the track (state-driven selection) ----
+  const timeFromClientX = useCallback((clientX: number) => {
+    const el = trackRef.current;
+    if (!el) return 0;
+    const r = el.getBoundingClientRect();
+    if (r.width <= 0) return 0;
+    return clamp((clientX - r.left) / r.width, 0, 1) * durationRef.current;
+  }, []);
+
+  // Click on empty track → move the window to START at the clicked time.
+  // Clicks that land on the region box/handles are ignored here (the box owns
+  // its own drag), so a click inside the selection doesn't re-place it.
+  const handleTrackClick = useCallback(
+    (e: React.MouseEvent) => {
+      if ((e.target as HTMLElement).closest('[data-testid="trimmer-region"]')) return;
+      const len = regionRef.current.end - regionRef.current.start;
+      setRegion(placeWindow(timeFromClientX(e.clientX), len, durationRef.current));
+    },
+    [timeFromClientX],
+  );
+
+  // Keyboard accessibility: arrow keys nudge the window, Home/End jump to ends.
+  const handleTrackKeyDown = useCallback((e: React.KeyboardEvent) => {
+    const cur = regionRef.current;
+    const dur = durationRef.current;
+    const len = cur.end - cur.start;
+    const step = e.shiftKey ? 5 : 1;
+    let start: number | null = null;
+    if (e.key === 'ArrowLeft') start = cur.start - step;
+    else if (e.key === 'ArrowRight') start = cur.start + step;
+    else if (e.key === 'Home') start = 0;
+    else if (e.key === 'End') start = dur;
+    if (start === null) return;
+    e.preventDefault();
+    setRegion(placeWindow(start, len, dur));
+  }, []);
+
+  // Drag the region body to move it, or its edges to resize it.
+  const dragRef = useRef<{ kind: 'move' | 'start' | 'end'; originX: number; orig: Region } | null>(
+    null,
+  );
+  const onPointerMove = useCallback((e: PointerEvent) => {
+    const d = dragRef.current;
+    const el = trackRef.current;
+    if (!d || !el) return;
+    const r = el.getBoundingClientRect();
+    const dur = durationRef.current;
+    if (r.width <= 0) return;
+    const dt = ((e.clientX - d.originX) / r.width) * dur;
+    if (d.kind === 'move') {
+      const len = d.orig.end - d.orig.start;
+      const start = clamp(d.orig.start + dt, 0, Math.max(0, dur - len));
+      setRegion({ start, end: start + len });
+    } else if (d.kind === 'start') {
+      const lo = Math.max(0, d.orig.end - WINDOW_MAX);
+      const hi = d.orig.end - WINDOW_MIN;
+      setRegion({ start: clamp(d.orig.start + dt, lo, hi), end: d.orig.end });
+    } else {
+      const lo = d.orig.start + WINDOW_MIN;
+      const hi = Math.min(dur, d.orig.start + WINDOW_MAX);
+      setRegion({ start: d.orig.start, end: clamp(d.orig.end + dt, lo, hi) });
+    }
+  }, []);
+  const onPointerUp = useCallback(() => {
+    dragRef.current = null;
+    window.removeEventListener('pointermove', onPointerMove);
+    window.removeEventListener('pointerup', onPointerUp);
+  }, [onPointerMove]);
+  const startDrag = useCallback(
+    (kind: 'move' | 'start' | 'end') => (e: React.PointerEvent) => {
+      e.stopPropagation();
+      dragRef.current = { kind, originX: e.clientX, orig: regionRef.current };
+      window.addEventListener('pointermove', onPointerMove);
+      window.addEventListener('pointerup', onPointerUp);
+    },
+    [onPointerMove, onPointerUp],
+  );
+  // Clean up any stray listeners on unmount.
+  useEffect(() => () => {
+    window.removeEventListener('pointermove', onPointerMove);
+    window.removeEventListener('pointerup', onPointerUp);
+  }, [onPointerMove, onPointerUp]);
 
   // ---- confirm ----
   const handleConfirm = useCallback(() => {
@@ -314,29 +331,36 @@ export function AudioTrimmer({ file, onConfirm, expandedByDefault }: AudioTrimme
   const lengthSec = mode === 'whole-clip' ? duration : region.end - region.start;
   const classification = classifyWindowLength(lengthSec);
   const showWarning = classification === 'warn';
+  const pct = (v: number) => (duration > 0 ? `${clamp((v / duration) * 100, 0, 100)}%` : '0%');
 
-  // ---- render helpers ----
+  // ---- render ----
 
   if (mode === 'loading') {
     return (
-      <div data-testid="audio-trimmer" data-state="loading" className="rounded-lg border border-border p-4 text-sm text-muted-foreground">
+      <div
+        data-testid="audio-trimmer"
+        data-state="loading"
+        className="rounded-lg border border-border p-4 text-sm text-muted-foreground"
+      >
         {t('trimmer.loading')}
       </div>
     );
   }
 
-  // Collapsed variant (source 15-45s)
   if (mode === 'collapsed') {
     return (
-      <div data-testid="audio-trimmer" data-state="collapsed" className="rounded-lg border border-border p-3">
+      <div
+        data-testid="audio-trimmer"
+        data-state="collapsed"
+        className="rounded-lg border border-border p-3"
+      >
         <div className="flex items-center gap-3">
           <span className="text-accent font-bold">✓</span>
           <div className="flex-1 min-w-0">
-            <div className="text-sm font-medium">{t('trimmer.referenceReady')} · {formatAudioDuration(duration)}</div>
-            <div
-              className="text-xs text-muted-foreground"
-              data-testid="trimmer-collapsed-note"
-            >
+            <div className="text-sm font-medium">
+              {t('trimmer.referenceReady')} · {formatAudioDuration(duration)}
+            </div>
+            <div className="text-xs text-muted-foreground" data-testid="trimmer-collapsed-note">
               {t('trimmer.inRange')}
             </div>
           </div>
@@ -364,7 +388,7 @@ export function AudioTrimmer({ file, onConfirm, expandedByDefault }: AudioTrimme
     );
   }
 
-  // Short-clip or expanded variant both show the waveform
+  // expanded / whole-clip — waveform + (expanded) state-driven selection overlay
   return (
     <div
       data-testid="audio-trimmer"
@@ -388,15 +412,44 @@ export function AudioTrimmer({ file, onConfirm, expandedByDefault }: AudioTrimme
 
       {/* Body */}
       <div className="p-3 space-y-2">
-        {/* Waveform */}
+        {/* Waveform + selection overlay (the box is positioned from state). */}
+        {/* biome-ignore lint/a11y/noStaticElementInteractions: custom waveform slider — role="slider", tabIndex, aria-value*, and onKeyDown (arrow keys) are provided when interactive; the conditional role confuses static analysis. */}
+        {/* biome-ignore lint/a11y/useAriaPropsSupportedByRole: same — role is "slider" whenever the aria-value* props are present (expanded mode). */}
         <div
-          ref={waveformRef}
+          ref={trackRef}
           data-testid="trimmer-waveform"
-          className="w-full min-h-[80px] rounded"
+          className="relative w-full h-[80px] rounded select-none focus:outline-none focus:ring-1 focus:ring-accent"
+          style={{ touchAction: 'none' }}
+          role={mode === 'expanded' ? 'slider' : undefined}
+          tabIndex={mode === 'expanded' ? 0 : undefined}
+          aria-label={mode === 'expanded' ? t('trimmer.pickWindow') : undefined}
+          aria-valuemin={mode === 'expanded' ? 0 : undefined}
+          aria-valuemax={mode === 'expanded' ? Math.round(duration) : undefined}
+          aria-valuenow={mode === 'expanded' ? Math.round(region.start) : undefined}
+          onClick={mode === 'expanded' ? handleTrackClick : undefined}
+          onKeyDown={mode === 'expanded' ? handleTrackKeyDown : undefined}
         >
-          {/* wavesurfer mounts here; in expanded mode also renders the region overlay */}
+          {/* wavesurfer paints here; pointer-events off so the track owns interaction */}
+          <div ref={waveformRef} className="absolute inset-0 pointer-events-none" />
+
           {mode === 'expanded' && (
-            <div data-testid="trimmer-region" className="pointer-events-none" />
+            <div
+              data-testid="trimmer-region"
+              className="absolute top-0 bottom-0 bg-accent/25 border-x-2 border-accent cursor-grab"
+              style={{ left: pct(region.start), width: pct(region.end - region.start) }}
+              onPointerDown={startDrag('move')}
+            >
+              <div
+                data-testid="trimmer-handle-start"
+                className="absolute left-0 top-0 bottom-0 w-2 -ml-1 cursor-ew-resize bg-accent rounded"
+                onPointerDown={startDrag('start')}
+              />
+              <div
+                data-testid="trimmer-handle-end"
+                className="absolute right-0 top-0 bottom-0 w-2 -mr-1 cursor-ew-resize bg-accent rounded"
+                onPointerDown={startDrag('end')}
+              />
+            </div>
           )}
         </div>
 
@@ -405,13 +458,14 @@ export function AudioTrimmer({ file, onConfirm, expandedByDefault }: AudioTrimme
           <span>{formatAudioDuration(0)}</span>
           {mode === 'expanded' && (
             <span data-testid="trimmer-selection" className="text-accent font-mono">
-              {formatAudioDuration(region.start)} – {formatAudioDuration(region.end)} · {t('trimmer.selection')}
+              {formatAudioDuration(region.start)} – {formatAudioDuration(region.end)} ·{' '}
+              {t('trimmer.selection')}
             </span>
           )}
           <span>{formatAudioDuration(duration)}</span>
         </div>
 
-        {/* Length slider (only in expanded mode) */}
+        {/* Length slider (expanded only) */}
         {mode === 'expanded' && (
           <div className="flex items-center gap-2">
             <span className="text-xs text-muted-foreground">{t('trimmer.window')}</span>
@@ -500,29 +554,20 @@ export function AudioTrimmer({ file, onConfirm, expandedByDefault }: AudioTrimme
 
         {/* Warning (expanded, >30s) */}
         {mode === 'expanded' && showWarning && (
-          <p
-            data-testid="trimmer-warning"
-            className="text-xs text-amber-400"
-          >
+          <p data-testid="trimmer-warning" className="text-xs text-amber-400">
             {t('trimmer.warning')}
           </p>
         )}
 
         {/* Short-clip note */}
         {mode === 'whole-clip' && (
-          <p
-            data-testid="trimmer-shortnote"
-            className="text-xs text-muted-foreground"
-          >
+          <p data-testid="trimmer-shortnote" className="text-xs text-muted-foreground">
             {t('trimmer.shortNote')}
           </p>
         )}
 
         {/* Confirm */}
-        <Button
-          className="w-full mt-1"
-          onClick={handleConfirm}
-        >
+        <Button className="w-full mt-1" onClick={handleConfirm}>
           {t('trimmer.useThisClip')}
         </Button>
       </div>

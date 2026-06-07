@@ -452,6 +452,7 @@ function CloneTabBody({
           onRetranscribe={transcript.retranscribe}
           onAcceptRegenerate={transcript.acceptRegenerate}
           onKeepEdits={transcript.keepEdits}
+          hasClip={!!confirmedFile}
         />
       </div>
 
