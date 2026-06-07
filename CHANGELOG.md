@@ -5,6 +5,21 @@
 
 # Changelog
 
+## [0.8.0] - 2026-06-07
+
+**Auto-filled reference transcripts.** Cloning a voice no longer means typing out what was said — VoiceIt transcribes the clip for you and lets you correct it.
+
+### Transcribe, don't type
+
+- **Auto-transcribe on confirm.** When you confirm a reference clip, the selected window is transcribed with the bundled Whisper STT and the reference-transcript field is pre-filled — you review and correct instead of typing from scratch. Wired into all three clone entry points: voice profiles, sample upload, and audiobook character casting.
+- **Your edits are safe.** Auto-filled text you've edited is never silently overwritten; re-trim to a different window after editing and VoiceIt asks whether to regenerate from the new clip or keep your edits (and re-transcribes silently only when you haven't touched it).
+- **In-flight, failure, and retry states.** A transcribing indicator while STT runs (the field stays typeable so you can take over), a clear fallback if transcription fails or returns nothing, and a **Re-transcribe** button to re-run detection on the current clip on demand.
+- **Real transcripts for cast clones.** Cloning a character voice in the audiobook editor now submits the actual transcript instead of a placeholder.
+
+### macOS packaging fixes
+
+- **App & installer icons restored.** Regenerated a valid `.icns` (the old one had mislabeled retina chunks that macOS rejected, leaving a blank icon) and corrected the bundle icon reference, so VoiceIt shows its icon in Finder, the Dock, and inside the dmg. The dmg now ships in Tauri's styled layout (drag-to-Applications + volume icon) rather than a bare repackaged image, and CI gates both — statically and on the built artifact.
+
 ## [0.7.0] - 2026-06-03
 
 **In-app voice-clone trimmer.** Cloning no longer rejects long audio — drop in (or record) a clip of any length and pick the slice that gets cloned.
