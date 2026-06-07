@@ -52,6 +52,10 @@ pipeline {
                             command -v just >/dev/null 2>&1 || cargo install just --locked
                             rustc --version; bun --version; just --version; python3 --version
 
+                            # Fail fast on a broken bundle icon config before the build (shared check;
+                            # plain ESM — run with node if present, else bun).
+                            if command -v node >/dev/null 2>&1; then node scripts/check-bundle-icons.mjs; else bun scripts/check-bundle-icons.mjs; fi
+
                             # Warm workspaces can carry a stale backend/venv whose interpreter
                             # shebang points at an old path (e.g. after a job/workspace rename),
                             # which breaks `just setup`'s setup-python with a bad-interpreter error.
@@ -97,6 +101,10 @@ pipeline {
                             export PATH="$BUN_INSTALL/bin:$PATH"
                             uv --version; rustc --version; bun --version
 
+                            # Fail fast on a broken icon config BEFORE the long build (catches a
+                            # malformed icns or a CFBundleIconFile that doesn't match the bundled icns).
+                            node scripts/check-bundle-icons.mjs
+
                             rm -rf backend/venv
                             uv venv --python 3.12 --seed backend/venv
                             backend/venv/bin/python -m pip install --upgrade pip
@@ -134,13 +142,41 @@ pipeline {
                             # bare, icon-less image we used to emit. Verify the signature only.
                             # (For a fully trusted, no-warning install, set a real Developer ID +
                             # APPLE_ID/APPLE_PASSWORD/APPLE_TEAM_ID and notarize the Tauri dmg here.)
+                            # ── Verify the produced dmg on the real artifact ──────────────
+                            # Mounts the dmg and asserts: signed .app + a decodable app icon
+                            # (CFBundleIconFile resolves to a Resources icns that `sips` can read)
+                            # + a blessed .VolumeIcon.icns + the Applications drag symlink. This is
+                            # the last line of defence against the icon/dmg regressions: a malformed
+                            # icns or a bad CFBundleIconFile FAILS the build instead of shipping a
+                            # blank-icon/bare dmg. (The pre-build check-bundle-icons.mjs gate catches
+                            # the config statically; this confirms the actual packaged result.)
                             DMG=$(find tauri/src-tauri/target/release/bundle/dmg -name "*.dmg" | head -1 || true)
-                            APP=$(find tauri/src-tauri/target/release/bundle/macos -maxdepth 1 -name "*.app" -type d | head -1 || true)
-                            if [ -n "$APP" ]; then
-                                codesign --verify --deep --strict "$APP" && echo "Signature: OK" || echo "Signature: INVALID"
-                                codesign -dvv "$APP" 2>&1 | grep -E "Signature|Identifier|Authority" || true
+                            if [ -n "$DMG" ]; then
+                                echo "=== Tauri styled dmg: $(du -h "$DMG" | cut -f1) ==="
+                                MNT=$(mktemp -d); fail=0
+                                hdiutil attach "$DMG" -mountpoint "$MNT" -nobrowse -quiet
+                                APP=$(find "$MNT" -maxdepth 1 -name "*.app" -type d | head -1 || true)
+                                [ -n "$APP" ] || { echo "VERIFY: no .app inside dmg"; fail=1; }
+                                if [ -n "$APP" ]; then
+                                    codesign --verify --deep --strict "$APP" && echo "VERIFY: signature OK" || { echo "VERIFY: signature INVALID"; fail=1; }
+                                    ICONKEY=$(defaults read "$APP/Contents/Info" CFBundleIconFile 2>/dev/null || true)
+                                    case "$ICONKEY" in
+                                        icon|icon.icns) echo "VERIFY: CFBundleIconFile=$ICONKEY" ;;
+                                        *) echo "VERIFY: CFBundleIconFile='$ICONKEY' is not the bundled icon.icns"; fail=1 ;;
+                                    esac
+                                    ICNS="$APP/Contents/Resources/${ICONKEY%.icns}.icns"
+                                    if [ -f "$ICNS" ]; then
+                                        W=$(sips -g pixelWidth "$ICNS" 2>/dev/null | awk '/pixelWidth/{print $2}')
+                                        if [ -n "$W" ] && [ "$W" -ge 256 ]; then echo "VERIFY: app icon decodes (${W}px)"; else echo "VERIFY: app icns does not decode (macOS would show a blank icon)"; fail=1; fi
+                                    else
+                                        echo "VERIFY: missing Resources icns ($ICNS)"; fail=1
+                                    fi
+                                fi
+                                [ -f "$MNT/.VolumeIcon.icns" ] && echo "VERIFY: .VolumeIcon.icns present" || { echo "VERIFY: no .VolumeIcon.icns (bare volume)"; fail=1; }
+                                [ -L "$MNT/Applications" ] && echo "VERIFY: Applications symlink present" || { echo "VERIFY: no Applications drag symlink"; fail=1; }
+                                hdiutil detach "$MNT" -quiet
+                                if [ "$fail" = 0 ]; then echo "=== dmg verification: PASS ==="; else echo "=== dmg verification: FAIL ==="; exit 1; fi
                             fi
-                            [ -n "$DMG" ] && echo "=== Tauri styled dmg: $(du -h "$DMG" | cut -f1) ==="
                         '''
                     }
                     post {
