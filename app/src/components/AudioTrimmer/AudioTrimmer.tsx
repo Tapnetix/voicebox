@@ -96,9 +96,11 @@ export function AudioTrimmer({ file, onConfirm, expandedByDefault }: AudioTrimme
         setRegion({ start: 0, end: dur });
         setMode(expandedByDefault === true ? 'expanded' : 'collapsed');
       } else {
-        // Long source — auto-expand with suggested window
-        const suggested = suggestWindow(buffer, WINDOW_DEFAULT);
-        setRegion(suggested);
+        // Long source — auto-expand with the window anchored at the START of the
+        // clip. Predictable: the user sees a window over the beginning and moves
+        // it where they want. "Auto-suggest" stays as an opt-in to jump to the
+        // highest-energy span.
+        setRegion({ start: 0, end: WINDOW_DEFAULT });
         setMode('expanded');
       }
     }).catch(() => {
@@ -199,6 +201,20 @@ export function AudioTrimmer({ file, onConfirm, expandedByDefault }: AudioTrimme
     ws.on('play', () => setIsPlaying(true));
     ws.on('pause', () => setIsPlaying(false));
 
+    // Click-to-place: clicking the waveform (outside the region) moves the
+    // selection window to START at the clicked time, keeping the current length.
+    // Fires only on user clicks on the bare waveform — the region overlay
+    // handles its own drag/resize. This is the intuitive "put the window here".
+    ws.on('interaction', (time: number) => {
+      if (mode !== 'expanded') return;
+      const cur = regionRef.current;
+      const len = cur.end - cur.start;
+      const maxEnd = bufferRef.current?.duration ?? WINDOW_MAX;
+      const start = clamp(time, 0, Math.max(0, maxEnd - len));
+      const end = Math.min(maxEnd, start + len);
+      setRegion({ start, end });
+    });
+
     // Load the file
     const url = URL.createObjectURL(file);
     objectUrlRef.current = url;
@@ -216,6 +232,19 @@ export function AudioTrimmer({ file, onConfirm, expandedByDefault }: AudioTrimme
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode]);
+
+  // Keep the on-screen region in sync with `region` state for PROGRAMMATIC
+  // changes (slider, click-to-place, auto-suggest). Value-compared so it does
+  // not fight the drag 'update' handler (which sets state FROM the region) — a
+  // user drag leaves wsReg already matching, so this skips and no loop forms.
+  useEffect(() => {
+    if (mode !== 'expanded') return;
+    const wsReg = wsRegionRef.current;
+    if (!wsReg) return;
+    if (Math.abs(wsReg.start - region.start) > 0.01 || Math.abs(wsReg.end - region.end) > 0.01) {
+      wsReg.setOptions({ start: region.start, end: region.end });
+    }
+  }, [region, mode]);
 
   // ---- transport handlers ----
   const handlePlay = useCallback(() => {
@@ -250,13 +279,8 @@ export function AudioTrimmer({ file, onConfirm, expandedByDefault }: AudioTrimme
       newEnd = maxEnd;
       newStart = Math.max(0, maxEnd - newLen);
     }
-    const updated = { start: newStart, end: newEnd };
-    setRegion(updated);
-    // Sync wavesurfer region
-    const wsReg = wsRegionRef.current;
-    if (wsReg) {
-      wsReg.setOptions(updated);
-    }
+    setRegion({ start: newStart, end: newEnd });
+    // The region-sync effect repositions the on-screen region from state.
   }, []);
 
   // ---- auto-suggest ----
@@ -266,8 +290,7 @@ export function AudioTrimmer({ file, onConfirm, expandedByDefault }: AudioTrimme
     const len = Math.round(regionRef.current.end - regionRef.current.start);
     const suggested = suggestWindow(buffer, len);
     setRegion(suggested);
-    const wsReg = wsRegionRef.current;
-    if (wsReg) wsReg.setOptions(suggested);
+    // The region-sync effect repositions the on-screen region from state.
   }, []);
 
   // ---- confirm ----

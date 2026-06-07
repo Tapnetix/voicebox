@@ -1,5 +1,5 @@
 import '@/i18n';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 
 // --- mocks ---
@@ -32,6 +32,8 @@ const mockWs = {
     seekTo: ReturnType<typeof vi.fn>;
     [key: string]: any;
   },
+  // Invoke recorded wavesurfer event handlers (e.g. 'interaction') from tests.
+  fire: undefined as undefined | ((event: string, ...args: any[]) => void),
 };
 
 // Minimal wavesurfer + regions mock — record handlers so tests can fire region updates.
@@ -45,7 +47,17 @@ vi.mock('wavesurfer.js', () => {
     load: vi.fn().mockResolvedValue(undefined),
     isPlaying: vi.fn(() => false),
   };
-  return { default: { create: vi.fn(() => { mockWs.instance = ws; return ws; }) } };
+  return {
+    default: {
+      create: vi.fn(() => {
+        mockWs.instance = ws;
+        mockWs.fire = (event: string, ...args: any[]) => {
+          for (const cb of handlers[event] ?? []) cb(...args);
+        };
+        return ws;
+      }),
+    },
+  };
 });
 vi.mock('wavesurfer.js/dist/plugins/regions.js', () => {
   const region = { start: 42, end: 62, setOptions: vi.fn(), on: vi.fn(), remove: vi.fn() };
@@ -90,19 +102,38 @@ describe('AudioTrimmer', () => {
     expect(screen.getByRole('button', { name: /use this clip/i })).not.toBeDisabled();
   });
 
-  it('S4: play scopes audition to the region', async () => {
+  it('S4: play scopes audition to the region (defaults to start; auto-suggest jumps to the energy window)', async () => {
     (decodeAudioFile as any).mockResolvedValue(fakeBuffer(192));
     render(<AudioTrimmer file={makeFile()} onConfirm={vi.fn()} />);
-    // Wait for the component to load and enter expanded mode (long source = 192s)
     await screen.findByTestId('trimmer-play');
-    // Clear any calls from initialization
     mockWs.instance!.setTime.mockClear();
     mockWs.instance!.play.mockClear();
-    // Click play — must seek to region start then call play()
+    // Long source now anchors the window at the START of the clip → play seeks to 0.
     fireEvent.click(screen.getByTestId('trimmer-play'));
-    // Region start is set to 42 by suggestWindow mock
-    expect(mockWs.instance!.setTime).toHaveBeenCalledWith(42);
+    expect(mockWs.instance!.setTime).toHaveBeenCalledWith(0);
     expect(mockWs.instance!.play).toHaveBeenCalled();
+    // Auto-suggest opt-in jumps the window to the highest-energy span (mock start=42).
+    mockWs.instance!.setTime.mockClear();
+    fireEvent.click(screen.getByTestId('trimmer-autosuggest'));
+    fireEvent.click(screen.getByTestId('trimmer-play'));
+    expect(mockWs.instance!.setTime).toHaveBeenCalledWith(42);
+  });
+
+  it('S4b: clicking the waveform moves the window to start at the clicked time', async () => {
+    (decodeAudioFile as any).mockResolvedValue(fakeBuffer(192));
+    render(<AudioTrimmer file={makeFile()} onConfirm={vi.fn()} />);
+    await screen.findByTestId('trimmer-play');
+    // Default window is 0:00–0:20; clicking at 120s places a 20s window at 2:00.
+    fireEvent.click(screen.getByTestId('trimmer-play')); // confirm default start = 0
+    expect(mockWs.instance!.setTime).toHaveBeenCalledWith(0);
+    mockWs.instance!.setTime.mockClear();
+    // Simulate a user click on the waveform at 120s (wavesurfer 'interaction').
+    act(() => mockWs.fire!('interaction', 120));
+    await waitFor(() =>
+      expect(screen.getByTestId('trimmer-selection')).toHaveTextContent(/2:00\s*–\s*2:20/),
+    );
+    fireEvent.click(screen.getByTestId('trimmer-play'));
+    expect(mockWs.instance!.setTime).toHaveBeenCalledWith(120);
   });
 
   it('S5: an in-range clip rests collapsed and expands on demand', async () => {

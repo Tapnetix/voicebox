@@ -358,6 +358,7 @@
   "referenceTranscript": {
     "label": "參考轉錄",
     "transcribing": "正在轉錄…",
+    "downloadingModel": "正在下載語音模型（僅首次）…",
     "autoFilledHint": "✓ 已自動填入 — 如有錯誤請修改",
     "errorNote": "⚠ 無法自動轉錄 — 請手動輸入",
     "retranscribe": "重新轉錄",

@@ -439,6 +439,20 @@ class ApiClient {
       body: formData,
     });
 
+    if (response.status === 202) {
+      // First run: the backend kicked off a one-time Whisper model download and
+      // returned 202 (a success status, so it's not caught below). Surface it as
+      // a typed error so callers can show a "downloading" state and auto-retry.
+      const body = await response.json().catch(() => ({}));
+      const err = new Error('Whisper model is downloading') as Error & {
+        code?: string;
+        modelName?: string;
+      };
+      err.code = 'MODEL_DOWNLOADING';
+      err.modelName = body?.detail?.model_name;
+      throw err;
+    }
+
     if (!response.ok) {
       const error = await response.json().catch(() => ({
         detail: response.statusText,

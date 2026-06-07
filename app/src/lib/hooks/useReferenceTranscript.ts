@@ -2,7 +2,12 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranscription } from '@/lib/hooks/useTranscription';
 import type { LanguageCode } from '@/lib/constants/languages';
 
-export type ReferenceTranscriptStatus = 'idle' | 'transcribing' | 'filled' | 'failed';
+export type ReferenceTranscriptStatus =
+  | 'idle'
+  | 'transcribing'
+  | 'downloading'
+  | 'filled'
+  | 'failed';
 
 export interface UseReferenceTranscriptArgs {
   file: File | null;
@@ -18,6 +23,16 @@ export interface UseReferenceTranscriptResult {
   retranscribe: () => void;
   acceptRegenerate: () => void;
   keepEdits: () => void;
+}
+
+// First-run transcription triggers a one-time Whisper model download; the
+// backend returns HTTP 202 (surfaced by apiClient as an error with this code).
+// We show a "downloading" state and poll until the model is ready.
+const DOWNLOAD_RETRY_MS = 4000;
+const MAX_DOWNLOAD_RETRIES = 75; // ~5 min ceiling
+
+function isModelDownloading(e: unknown): boolean {
+  return !!e && typeof e === 'object' && (e as { code?: string }).code === 'MODEL_DOWNLOADING';
 }
 
 export function useReferenceTranscript({
@@ -43,36 +58,63 @@ export function useReferenceTranscript({
   const setTextRef = useRef(setText);
   setTextRef.current = setText;
 
+  // Pending model-download retry timer + a self-ref so a scheduled retry can
+  // re-invoke the latest runTranscribe without it depending on itself.
+  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const runTranscribeRef = useRef<(target: File, attempt?: number) => void>(() => {});
+  const clearRetry = useCallback(() => {
+    if (retryTimerRef.current) {
+      clearTimeout(retryTimerRef.current);
+      retryTimerRef.current = null;
+    }
+  }, []);
+
   const isEdited = useCallback(() => {
     return textRef.current.trim() !== lastAutoFilledRef.current.trim();
   }, []);
 
-  const runTranscribe = useCallback(async (target: File) => {
-    setStatus('transcribing');
-    setRegeneratePrompt(false);
-    try {
-      const result = await transcribe.mutateAsync({
-        file: target,
-        language: languageRef.current,
-      });
-      const detected = (result?.text ?? '').trim();
-      if (detected.length === 0) {
+  const runTranscribe = useCallback(
+    async (target: File, attempt = 0) => {
+      clearRetry();
+      // attempt 0 = fresh STT; subsequent attempts mean we're waiting on the
+      // one-time model download, so keep showing the "downloading" state.
+      setStatus(attempt === 0 ? 'transcribing' : 'downloading');
+      setRegeneratePrompt(false);
+      try {
+        const result = await transcribe.mutateAsync({
+          file: target,
+          language: languageRef.current,
+        });
+        const detected = (result?.text ?? '').trim();
+        if (detected.length === 0) {
+          setStatus('failed');
+          return;
+        }
+        lastAutoFilledRef.current = detected;
+        setTextRef.current(detected);
+        setStatus('filled');
+      } catch (e) {
+        if (isModelDownloading(e) && attempt < MAX_DOWNLOAD_RETRIES) {
+          // One-time Whisper model download in progress: show it and auto-retry.
+          setStatus('downloading');
+          retryTimerRef.current = setTimeout(() => {
+            runTranscribeRef.current(target, attempt + 1);
+          }, DOWNLOAD_RETRY_MS);
+          return;
+        }
         setStatus('failed');
-        return;
       }
-      lastAutoFilledRef.current = detected;
-      setTextRef.current(detected);
-      setStatus('filled');
-    } catch {
-      setStatus('failed');
-    }
-    // transcribe.mutateAsync identity is stable for the lifetime of the hook.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+      // transcribe.mutateAsync identity is stable for the lifetime of the hook.
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    },
+    [clearRetry],
+  );
+  runTranscribeRef.current = runTranscribe;
 
   // React to a new confirmed file (by reference identity).
   useEffect(() => {
     if (!file) {
+      clearRetry();
       lastFileRef.current = null;
       setStatus('idle');
       setRegeneratePrompt(false);
@@ -83,6 +125,7 @@ export function useReferenceTranscript({
     }
     const isFirstFile = lastFileRef.current === null;
     lastFileRef.current = file;
+    clearRetry(); // cancel any pending retry from a previous clip
 
     if (!isFirstFile && isEdited()) {
       // New window WHILE edited → ask, do not clobber.
@@ -90,9 +133,12 @@ export function useReferenceTranscript({
       return;
     }
     void runTranscribe(file);
-    // isEdited / runTranscribe are stable.
+    // isEdited / runTranscribe / clearRetry are stable.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [file]);
+
+  // Cancel a pending retry on unmount.
+  useEffect(() => () => clearRetry(), [clearRetry]);
 
   const retranscribe = useCallback(() => {
     if (lastFileRef.current) {
@@ -112,7 +158,7 @@ export function useReferenceTranscript({
 
   return {
     status,
-    isTranscribing: status === 'transcribing',
+    isTranscribing: status === 'transcribing' || status === 'downloading',
     regeneratePrompt,
     retranscribe,
     acceptRegenerate,

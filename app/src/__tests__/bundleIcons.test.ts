@@ -1,3 +1,6 @@
+// @ts-nocheck — node-environment integration test (spawns the checker CLI, reads
+// files). The app tsconfig restricts ambient types to vite/client (browser), so
+// node built-ins aren't typed here; vitest runs this under Node regardless.
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, writeFileSync, copyFileSync, rmSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -30,7 +33,9 @@ function fixture(): string {
   copyFileSync(join(REAL_SRC_TAURI, 'icons', 'icon.icns'), join(d, 'icons', 'icon.icns'));
   return d;
 }
-afterAll(() => tmpDirs.forEach((d) => rmSync(d, { recursive: true, force: true })));
+afterAll(() => {
+  for (const d of tmpDirs) rmSync(d, { recursive: true, force: true });
+});
 
 describe('desktop bundle icon configuration', () => {
   it('the real tauri.conf.json + icon.icns + Info.plist pass validation', () => {

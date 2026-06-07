@@ -129,4 +129,33 @@ describe('useReferenceTranscript', () => {
     await waitFor(() => expect(h.result.current.status).toBe('filled'));
     expect(transcribeMutateAsync).toHaveBeenCalledTimes(1);
   });
+
+  it('shows downloading and auto-retries on a model-download (202) response', async () => {
+    vi.useFakeTimers();
+    try {
+      // First call: backend is downloading the model (apiClient throws a typed
+      // error). Second call (after the retry delay): real transcription.
+      const dlErr = Object.assign(new Error('downloading'), { code: 'MODEL_DOWNLOADING' });
+      transcribeMutateAsync.mockReset();
+      transcribeMutateAsync
+        .mockRejectedValueOnce(dlErr)
+        .mockResolvedValueOnce({ text: 'detected words' });
+
+      const h = setup({ file: fileA });
+      // Flush the initial attempt → 202 → 'downloading' (not 'failed'), retry scheduled.
+      await act(async () => {});
+      expect(transcribeMutateAsync).toHaveBeenCalledTimes(1);
+      expect(h.result.current.status).toBe('downloading');
+
+      // Advance past the retry interval → second attempt resolves → 'filled'.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(4000);
+      });
+      expect(transcribeMutateAsync).toHaveBeenCalledTimes(2);
+      expect(h.result.current.status).toBe('filled');
+      expect(h.setText).toHaveBeenCalledWith('detected words');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

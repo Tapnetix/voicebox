@@ -575,6 +575,7 @@
   "referenceTranscript": {
     "label": "Reference transcript",
     "transcribing": "Transcribing…",
+    "downloadingModel": "Downloading speech model (one-time)…",
     "autoFilledHint": "✓ Auto-filled — edit anything that's off",
     "errorNote": "⚠ Couldn't auto-transcribe — type the words",
     "retranscribe": "Re-transcribe",

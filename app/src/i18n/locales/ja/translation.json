@@ -358,6 +358,7 @@
   "referenceTranscript": {
     "label": "参照トランスクリプト",
     "transcribing": "文字起こし中…",
+    "downloadingModel": "音声モデルをダウンロード中（初回のみ）…",
     "autoFilledHint": "✓ 自動入力 — 間違いがあれば修正してください",
     "errorNote": "⚠ 自動文字起こしに失敗 — 内容を入力してください",
     "retranscribe": "再文字起こし",

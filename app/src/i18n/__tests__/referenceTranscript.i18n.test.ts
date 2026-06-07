@@ -7,6 +7,7 @@ import zhTW from '@/i18n/locales/zh-TW/translation.json';
 const REQUIRED = [
   'label',
   'transcribing',
+  'downloadingModel',
   'autoFilledHint',
   'errorNote',
   'retranscribe',

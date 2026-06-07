@@ -32,7 +32,9 @@ export function ReferenceTranscript({
   return (
     <div data-testid="reference-transcript" className="space-y-2">
       <div className="flex items-center justify-between">
-        <label className="text-sm font-medium leading-none">{label ?? t('referenceTranscript.label')}</label>
+        <label htmlFor="reference-transcript-input" className="text-sm font-medium leading-none">
+          {label ?? t('referenceTranscript.label')}
+        </label>
         <Button
           type="button"
           variant="outline"
@@ -48,6 +50,7 @@ export function ReferenceTranscript({
       </div>
 
       <Textarea
+        id="reference-transcript-input"
         data-testid="transcript-input"
         className="min-h-[100px]"
         placeholder={t('profileForm.fields.referenceTextPlaceholder')}
@@ -62,6 +65,16 @@ export function ReferenceTranscript({
         >
           <Loader2 className="h-3.5 w-3.5 animate-spin" />
           {t('referenceTranscript.transcribing')}
+        </p>
+      )}
+
+      {status === 'downloading' && (
+        <p
+          data-testid="transcript-downloading"
+          className="flex items-center gap-1.5 text-xs text-muted-foreground"
+        >
+          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          {t('referenceTranscript.downloadingModel')}
         </p>
       )}
 

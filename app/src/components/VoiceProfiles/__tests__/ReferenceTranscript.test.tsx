@@ -77,4 +77,12 @@ describe('ReferenceTranscript', () => {
     await userEvent.click(screen.getByTestId('transcript-regenerate-keep'));
     expect(onKeepEdits).toHaveBeenCalledTimes(1);
   });
+
+  it('shows the model-download state with Re-transcribe disabled but the input still editable', () => {
+    render(<ReferenceTranscript {...baseProps} status="downloading" isTranscribing />);
+    expect(screen.getByTestId('transcript-downloading')).toBeInTheDocument();
+    expect(screen.queryByTestId('transcript-transcribing')).not.toBeInTheDocument();
+    expect(screen.getByTestId('transcript-retranscribe')).toBeDisabled();
+    expect(screen.getByTestId('transcript-input')).not.toBeDisabled();
+  });
 });
