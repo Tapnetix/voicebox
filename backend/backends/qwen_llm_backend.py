@@ -9,6 +9,7 @@ and STT engines.
 
 import asyncio
 import logging
+from concurrent.futures import ThreadPoolExecutor
 from typing import Optional
 
 from . import LLMBackend, DEFAULT_LLM_MAX_TOKENS, DEFAULT_LLM_TEMPERATURE
@@ -18,6 +19,7 @@ from .base import (
     empty_device_cache,
     manual_seed,
     model_load_progress,
+    run_pinned,
 )
 from ..utils.hf_offline_patch import force_offline_if_cached
 
@@ -187,6 +189,9 @@ class MLXQwenLLMBackend:
         self.tokenizer = None
         self.model_size = model_size
         self._current_model_size: Optional[str] = None
+        # Dedicated single thread so the MLX model loads and generates on the
+        # same thread (MLX GPU streams are thread-local). See run_pinned.
+        self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="mlx-llm")
 
     def is_loaded(self) -> bool:
         return self.model is not None
@@ -212,7 +217,8 @@ class MLXQwenLLMBackend:
         if self.model is not None and self._current_model_size != model_size:
             self.unload_model()
 
-        await asyncio.to_thread(self._load_model_sync, model_size)
+        # Run blocking load on the backend's pinned thread (see run_pinned).
+        await run_pinned(self._executor, self._load_model_sync, model_size)
 
     def _load_model_sync(self, model_size: str) -> None:
         from mlx_lm import load as mlx_load
@@ -255,8 +261,10 @@ class MLXQwenLLMBackend:
         examples: Optional[list[tuple[str, str]]] = None,
     ) -> str:
         await self.load_model(model_size)
-        return await asyncio.to_thread(
-            self._generate_sync, prompt, system, max_tokens, temperature, examples
+        # Run inference on the SAME pinned thread the model loaded on (see
+        # run_pinned) so the MLX GPU stream is valid for this thread.
+        return await run_pinned(
+            self._executor, self._generate_sync, prompt, system, max_tokens, temperature, examples
         )
 
     def _generate_sync(

@@ -2,7 +2,7 @@
 MLX backend implementation for TTS and STT using mlx-audio.
 """
 
-from typing import Callable, Optional, List, Tuple
+from typing import Optional, List, Tuple
 import asyncio
 import logging
 import numpy as np
@@ -10,20 +10,6 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
-
-
-async def _run_pinned(executor: ThreadPoolExecutor, fn: Callable, *args):
-    """Run a blocking callable on a *specific* single-thread executor.
-
-    MLX GPU streams are thread-local: a model loaded on one thread cannot be
-    used to generate from another ("There is no Stream(gpu, N) in current
-    thread"). asyncio.to_thread() hands work to the default shared pool, so the
-    load and the inference can land on different threads. Pinning every call for
-    a backend to its own max_workers=1 executor guarantees load + inference run
-    on the same thread. See issue: M-series "no Stream(gpu, N)" generation error.
-    """
-    loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(executor, fn, *args)
 
 # PATCH: Import and apply offline patch BEFORE any huggingface_hub usage
 # This prevents mlx_audio from making network requests when models are cached
@@ -33,7 +19,7 @@ patch_huggingface_hub_offline()
 ensure_original_qwen_config_cached()
 
 from . import TTSBackend, STTBackend, LANGUAGE_CODE_TO_NAME, WHISPER_HF_REPOS
-from .base import is_model_cached, combine_voice_prompts as _combine_voice_prompts, model_load_progress
+from .base import is_model_cached, combine_voice_prompts as _combine_voice_prompts, model_load_progress, run_pinned
 from ..utils.cache import get_cache_key, get_cached_voice_prompt, cache_voice_prompt
 
 
@@ -45,7 +31,7 @@ class MLXTTSBackend:
         self.model_size = model_size
         self._current_model_size = None
         # Dedicated single thread so the MLX model loads and generates on the
-        # same thread (MLX GPU streams are thread-local). See _run_pinned.
+        # same thread (MLX GPU streams are thread-local). See run_pinned.
         self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="mlx-tts")
 
     def is_loaded(self) -> bool:
@@ -99,8 +85,8 @@ class MLXTTSBackend:
         if self.model is not None and self._current_model_size != model_size:
             self.unload_model()
 
-        # Run blocking load on the backend's pinned thread (see _run_pinned).
-        await _run_pinned(self._executor, self._load_model_sync, model_size)
+        # Run blocking load on the backend's pinned thread (see run_pinned).
+        await run_pinned(self._executor, self._load_model_sync, model_size)
 
     # Alias for compatibility
     load_model = load_model_async
@@ -277,8 +263,8 @@ class MLXTTSBackend:
             return audio, sample_rate
 
         # Run blocking inference on the SAME pinned thread the model loaded on
-        # (see _run_pinned) so the MLX GPU stream is valid for this thread.
-        audio, sample_rate = await _run_pinned(self._executor, _generate_sync)
+        # (see run_pinned) so the MLX GPU stream is valid for this thread.
+        audio, sample_rate = await run_pinned(self._executor, _generate_sync)
 
         return audio, sample_rate
 
@@ -313,8 +299,8 @@ class MLXSTTBackend:
         if self.model is not None and self.model_size == model_size:
             return
 
-        # Run blocking load on the backend's pinned thread (see _run_pinned).
-        await _run_pinned(self._executor, self._load_model_sync, model_size)
+        # Run blocking load on the backend's pinned thread (see run_pinned).
+        await run_pinned(self._executor, self._load_model_sync, model_size)
 
     # Alias for compatibility
     load_model = load_model_async
@@ -385,5 +371,5 @@ class MLXSTTBackend:
                 return str(result).strip()
 
         # Run blocking transcription on the SAME pinned thread the model loaded
-        # on (see _run_pinned) so the MLX GPU stream is valid for this thread.
-        return await _run_pinned(self._executor, _transcribe_sync)
+        # on (see run_pinned) so the MLX GPU stream is valid for this thread.
+        return await run_pinned(self._executor, _transcribe_sync)

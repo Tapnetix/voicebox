@@ -5,8 +5,10 @@ Eliminates duplication of cache checking, device detection,
 voice prompt combination, and model loading progress tracking.
 """
 
+import asyncio
 import logging
 import platform
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Callable, List, Optional, Tuple
@@ -19,6 +21,21 @@ from ..utils.hf_progress import HFProgressTracker, create_hf_progress_callback
 from ..utils.tasks import get_task_manager
 
 logger = logging.getLogger(__name__)
+
+
+async def run_pinned(executor: ThreadPoolExecutor, fn: Callable, *args):
+    """Run a blocking callable on a *specific* single-thread executor.
+
+    MLX GPU streams are thread-local: a model loaded on one thread cannot be
+    used for inference from another ("There is no Stream(gpu, N) in current
+    thread"). asyncio.to_thread() hands work to the default shared pool, so the
+    load and the inference can land on different threads. Giving each MLX
+    backend its own max_workers=1 executor and routing every load/inference
+    call through it guarantees they run on the same thread and share one valid
+    GPU stream. Applies to all MLX-based backends (TTS, STT, LLM).
+    """
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(executor, fn, *args)
 
 
 def is_model_cached(
