@@ -93,6 +93,8 @@
       "delete": "Delete",
       "editChapter": "Edit",
       "generateChapter": "Generate",
+      "assignVoice": "Assign voice",
+      "changeVoice": "Change voice",
       "summary": {
         "chapters_one": "{{count}} chapter",
         "chapters_other": "{{count}} chapters",
@@ -204,6 +206,7 @@
       "filterFlagged": "Flagged",
       "readalong": "Read-along",
       "readalongHint": "plays the chapter & highlights each line as it's spoken",
+      "readalongNeedsAudio": "Generate this chapter's audio first to read along",
       "legend": "legend",
       "scrollHint": "scroll · the whole chapter is here",
       "reassignTitle": "Reassign this line to…",

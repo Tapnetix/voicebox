@@ -92,6 +92,8 @@ function CharCard({ char, selected, onToggle, onDrillIn }: CharCardProps) {
   const { t } = useTranslation();
   const confLabel = confidenceLabel(char.confidence);
 
+  const hasVoice = !!(char.voice_label || char.voice_type);
+
   return (
     <div
       data-testid={`char-card-${char.id}`}
@@ -127,11 +129,6 @@ function CharCard({ char, selected, onToggle, onDrillIn }: CharCardProps) {
           {char.role && !char.is_narrator && (
             <Badge variant="secondary">{char.role}</Badge>
           )}
-          {char.voice_type && (
-            <Badge variant="outline">
-              {char.voice_type === 'designed' ? '🎙 designed' : char.voice_type}
-            </Badge>
-          )}
           {!char.is_narrator && char.dialogue_count > 0 && (
             <Badge variant="outline">{char.dialogue_count} lines</Badge>
           )}
@@ -149,6 +146,24 @@ function CharCard({ char, selected, onToggle, onDrillIn }: CharCardProps) {
           )}
         </div>
       </div>
+      {/* Voice control — explicit affordance to set/change a character's voice.
+          Shows the assigned voice when present, else a clear "Assign voice" CTA.
+          Both drill into the voice editor (same destination as the name link). */}
+      <Button
+        variant={hasVoice ? 'secondary' : 'outline'}
+        size="sm"
+        data-testid={`assign-voice-${char.id}`}
+        onClick={() => onDrillIn(char.id)}
+        title={hasVoice ? t('books.overview.changeVoice') : t('books.overview.assignVoice')}
+        className="shrink-0 self-center gap-1.5 max-w-[11rem]"
+      >
+        <span aria-hidden>🎙</span>
+        <span className="truncate">
+          {hasVoice
+            ? (char.voice_label ?? char.voice_type)
+            : t('books.overview.assignVoice')}
+        </span>
+      </Button>
     </div>
   );
 }
@@ -456,9 +471,9 @@ export function BookOverview() {
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-4 h-full min-h-0">
       {/* ── Book header ────────────────────────────────────────────────── */}
-      <Card data-testid="book-header">
+      <Card data-testid="book-header" className="shrink-0">
         <CardContent className="p-4">
           <div className="flex items-start gap-4">
             {/* Cover placeholder */}
@@ -527,10 +542,13 @@ export function BookOverview() {
       </Card>
 
       {/* ── Two-column layout: cast + chapters ─────────────────────────── */}
-      <div className="flex gap-4 items-start">
+      {/* flex-1 min-h-0 lets the row consume the height left by the header and
+          allows the inner rosters to scroll instead of clipping (issue: long
+          cast / chapter lists had no scrollbar). */}
+      <div className="flex gap-4 items-stretch flex-1 min-h-0">
         {/* Cast panel */}
-        <Card className="flex-1" data-testid="cast-summary">
-          <CardContent className="p-4">
+        <Card className="flex-1 flex flex-col min-h-0" data-testid="cast-summary">
+          <CardContent className="p-4 flex flex-col min-h-0 flex-1">
             <div className="flex items-center justify-between mb-2">
               <h2 className="text-lg font-semibold">{t('books.overview.cast')}</h2>
               <div className="flex gap-1.5" data-testid="cast-actions">
@@ -554,10 +572,10 @@ export function BookOverview() {
                 </Button>
               </div>
             </div>
-            <p className="text-xs text-muted-foreground mb-3">
+            <p className="text-xs text-muted-foreground mb-3 shrink-0">
               {t('books.overview.castHint')}
             </p>
-            <div className="flex flex-col" data-testid="cast-roster">
+            <div className="flex flex-col overflow-y-auto min-h-0 flex-1 -mr-2 pr-2" data-testid="cast-roster">
               {characters.map((char) => (
                 <CharCard
                   key={char.id}
@@ -572,12 +590,12 @@ export function BookOverview() {
         </Card>
 
         {/* Chapter list panel */}
-        <Card className="flex-[1.3]" data-testid="chapter-list">
-          <CardContent className="p-4">
-            <h2 className="text-lg font-semibold mb-3">
+        <Card className="flex-[1.3] flex flex-col min-h-0" data-testid="chapter-list">
+          <CardContent className="p-4 flex flex-col min-h-0 flex-1">
+            <h2 className="text-lg font-semibold mb-3 shrink-0">
               {t('books.overview.chapters')}
             </h2>
-            <div className="flex flex-col">
+            <div className="flex flex-col overflow-y-auto min-h-0 flex-1 -mr-2 pr-2">
               {chapters.map((chapter, index) => (
                 <ChapterRow
                   key={chapter.id}

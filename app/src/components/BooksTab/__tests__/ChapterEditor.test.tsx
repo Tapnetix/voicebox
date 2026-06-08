@@ -141,11 +141,15 @@ describe('ChapterEditor', () => {
     expect(within(toolbar).getByText(/Flagged/)).toBeInTheDocument();
   });
 
-  it('renders readalong-btn (present, enabled — wired by D5)', () => {
+  it('renders readalong-btn (present, disabled when chapter has no generated audio — D5)', () => {
+    // useStory/useBook are mocked to null here (no Story → no generated audio),
+    // so read-along has nothing to play and the button must be disabled rather
+    // than a silent no-op. (Enabled-with-audio path is covered in
+    // ChapterEditorReadAlong.test.tsx.)
     render(<ChapterEditor />);
     const btn = screen.getByTestId('readalong-btn');
     expect(btn).toBeInTheDocument();
-    expect(btn).not.toBeDisabled();
+    expect(btn).toBeDisabled();
   });
 
   it('renders review-rail with review-progress', () => {

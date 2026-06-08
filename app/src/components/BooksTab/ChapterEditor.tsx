@@ -775,6 +775,11 @@ export function ChapterEditor() {
       : undefined;
   useStoryPlayback(readAlongItems);
 
+  // Read-along plays the chapter's *generated* audio while highlighting lines.
+  // If the chapter hasn't been generated yet there's no Story/audio to play, so
+  // the button must not be a silent no-op — disable it and explain why.
+  const hasReadAlongAudio = !!(chapterStoryId && (chapterStory?.items?.length ?? 0) > 0);
+
   const [filterMode, setFilterMode] = useState<FilterMode>('all');
   const [byCharacterId, setByCharacterId] = useState<string | null>(null);
   const [showCharacterPicker, setShowCharacterPicker] = useState(false);
@@ -887,12 +892,21 @@ export function ChapterEditor() {
         </div>
 
         <div className="flex items-center gap-2">
-          {/* D5: read-along button — starts/stops chapter playback with line highlight */}
+          {/* D5: read-along button — starts/stops chapter playback with line highlight.
+              Disabled (with an explanatory hint) until the chapter has generated audio. */}
           <Button
             variant={readAlongPlaying ? 'default' : 'secondary'}
             size="sm"
             data-testid="readalong-btn"
             onClick={handleReadAlongToggle}
+            disabled={!hasReadAlongAudio && !readAlongPlaying}
+            title={
+              !hasReadAlongAudio
+                ? t('books.chapterEditor.readalongNeedsAudio', {
+                    defaultValue: "Generate this chapter's audio first to read along",
+                  })
+                : undefined
+            }
           >
             {readAlongPlaying ? '⏸ ' : '▶ '}
             {readAlongPlaying
@@ -900,7 +914,11 @@ export function ChapterEditor() {
               : t('books.chapterEditor.readalong')}
           </Button>
           <span className="text-xs text-muted-foreground">
-            {t('books.chapterEditor.readalongHint')}
+            {hasReadAlongAudio
+              ? t('books.chapterEditor.readalongHint')
+              : t('books.chapterEditor.readalongNeedsAudio', {
+                  defaultValue: "Generate this chapter's audio first to read along",
+                })}
           </span>
         </div>
       </div>
