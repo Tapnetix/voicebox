@@ -2,10 +2,38 @@
 Audio processing utilities.
 """
 
+import wave
 import numpy as np
 import soundfile as sf
 import librosa
 from typing import Tuple, Optional
+
+
+def _load_pcm_wav(path: str, target_sr: int, mono: bool):
+    """Fast, dependency-light decode for 16-bit PCM WAV via the stdlib `wave`
+    module. The desktop app always uploads 16-bit PCM WAV (client-side slice),
+    and decoding it here avoids the librosa→soundfile→audioread fallback chain,
+    which on some bundled runtimes raises a spurious zlib "incorrect header
+    check" on perfectly valid WAVs. Returns (audio, sr) or None if `path` is not
+    a 16-bit PCM WAV this fast-path handles (caller then falls back to librosa).
+    """
+    try:
+        with wave.open(path, "rb") as w:
+            if w.getsampwidth() != 2:  # only 16-bit PCM
+                return None
+            channels = w.getnchannels()
+            sr = w.getframerate()
+            raw = w.readframes(w.getnframes())
+    except (wave.Error, EOFError, OSError):
+        return None
+
+    data = np.frombuffer(raw, dtype="<i2").astype(np.float32) / 32768.0
+    if channels > 1:
+        data = data.reshape(-1, channels)
+        data = data.mean(axis=1) if mono else data.T  # mono mixdown or (ch, n)
+    if sr != target_sr:
+        data = librosa.resample(data, orig_sr=sr, target_sr=target_sr)
+    return data.astype(np.float32), target_sr
 
 
 def normalize_loudness(
@@ -96,6 +124,12 @@ def load_audio(
     Returns:
         Tuple of (audio_array, sample_rate)
     """
+    # Fast-path for 16-bit PCM WAV (what the desktop app always uploads): decode
+    # with the stdlib `wave` module to avoid the soundfile/audioread fallback
+    # chain (which can raise a spurious zlib error on valid WAVs in some bundles).
+    fast = _load_pcm_wav(path, sample_rate, mono)
+    if fast is not None:
+        return fast
     audio, sr = librosa.load(path, sr=sample_rate, mono=mono)
     return audio, sr
 
@@ -351,4 +385,14 @@ def validate_and_load_reference_audio(
 
         return True, None, audio, sr
     except Exception as e:
-        return False, f"Error validating audio: {str(e)}", None, None
+        # Include what actually arrived (size + magic bytes) so a transport/format
+        # problem is diagnosable instead of a bare decoder error.
+        try:
+            with open(audio_path, "rb") as fh:
+                head = fh.read(12)
+            import os
+
+            diag = f" [received {os.path.getsize(audio_path)} bytes, magic {head[:4].hex()}]"
+        except Exception:
+            diag = ""
+        return False, f"Error validating audio: {str(e)}{diag}", None, None
