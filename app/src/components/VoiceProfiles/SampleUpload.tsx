@@ -347,6 +347,7 @@ export function SampleUpload({ profileId, open, onOpenChange }: SampleUploadProp
               onAcceptRegenerate={transcript.acceptRegenerate}
               onKeepEdits={transcript.keepEdits}
               hasClip={!!confirmedFile || !!rawFile}
+              error={transcript.error}
             />
 
             <div className="flex gap-2 justify-end">

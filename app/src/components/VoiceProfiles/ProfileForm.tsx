@@ -1031,6 +1031,7 @@ export function ProfileForm() {
                             onAcceptRegenerate={transcript.acceptRegenerate}
                             onKeepEdits={transcript.keepEdits}
                             hasClip={!!selectedFile || !!rawSelectedFile}
+                            error={transcript.error}
                           />
                         </>
                       )}

@@ -17,6 +17,8 @@ export interface ReferenceTranscriptProps {
   /** Whether a trimmed clip has been confirmed. When false, Re-transcribe is
    *  disabled (there is nothing to transcribe yet) with a hint to confirm one. */
   hasClip?: boolean;
+  /** Failure reason (backend error) shown alongside the generic failed note. */
+  error?: string | null;
 }
 
 export function ReferenceTranscript({
@@ -30,6 +32,7 @@ export function ReferenceTranscript({
   onKeepEdits,
   label,
   hasClip = true,
+  error,
 }: ReferenceTranscriptProps) {
   const { t } = useTranslation();
 
@@ -98,6 +101,7 @@ export function ReferenceTranscript({
       {status === 'failed' && (
         <p data-testid="transcript-error" className="text-xs text-destructive">
           {t('referenceTranscript.errorNote')}
+          {error ? ` (${error})` : ''}
         </p>
       )}
 

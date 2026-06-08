@@ -20,6 +20,8 @@ export interface UseReferenceTranscriptResult {
   status: ReferenceTranscriptStatus;
   isTranscribing: boolean;
   regeneratePrompt: boolean;
+  /** Human-readable reason when status is 'failed' (e.g. the backend error). */
+  error: string | null;
   retranscribe: () => void;
   acceptRegenerate: () => void;
   keepEdits: () => void;
@@ -45,6 +47,7 @@ export function useReferenceTranscript({
 
   const [status, setStatus] = useState<ReferenceTranscriptStatus>('idle');
   const [regeneratePrompt, setRegeneratePrompt] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   // Reference identity of the last file we acted on (transcribed or prompted for).
   const lastFileRef = useRef<File | null>(null);
@@ -80,6 +83,7 @@ export function useReferenceTranscript({
       // one-time model download, so keep showing the "downloading" state.
       setStatus(attempt === 0 ? 'transcribing' : 'downloading');
       setRegeneratePrompt(false);
+      setError(null);
       try {
         const result = await transcribe.mutateAsync({
           file: target,
@@ -87,6 +91,7 @@ export function useReferenceTranscript({
         });
         const detected = (result?.text ?? '').trim();
         if (detected.length === 0) {
+          setError('the transcription came back empty');
           setStatus('failed');
           return;
         }
@@ -102,6 +107,7 @@ export function useReferenceTranscript({
           }, DOWNLOAD_RETRY_MS);
           return;
         }
+        setError(e instanceof Error ? e.message : String(e));
         setStatus('failed');
       }
       // transcribe.mutateAsync identity is stable for the lifetime of the hook.
@@ -160,6 +166,7 @@ export function useReferenceTranscript({
     status,
     isTranscribing: status === 'transcribing' || status === 'downloading',
     regeneratePrompt,
+    error,
     retranscribe,
     acceptRegenerate,
     keepEdits,

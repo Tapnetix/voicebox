@@ -86,6 +86,11 @@ describe('ReferenceTranscript', () => {
     expect(screen.getByTestId('transcript-input')).not.toBeDisabled();
   });
 
+  it('shows the backend error detail in the failed state', () => {
+    render(<ReferenceTranscript {...baseProps} status="failed" value="" error="HTTP 500: boom" />);
+    expect(screen.getByTestId('transcript-error')).toHaveTextContent('HTTP 500: boom');
+  });
+
   it('disables Re-transcribe and shows a hint until a clip is confirmed (hasClip=false)', () => {
     render(<ReferenceTranscript {...baseProps} status="idle" hasClip={false} />);
     expect(screen.getByTestId('transcript-retranscribe')).toBeDisabled();

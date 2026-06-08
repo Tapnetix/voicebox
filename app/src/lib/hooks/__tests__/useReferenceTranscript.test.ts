@@ -90,10 +90,11 @@ describe('useReferenceTranscript', () => {
     expect(h.result.current.regeneratePrompt).toBe(false);
   });
 
-  it('sets status failed when STT rejects (SC3)', async () => {
+  it('sets status failed and surfaces the error message when STT rejects (SC3)', async () => {
     transcribeMutateAsync.mockRejectedValueOnce(new Error('stt down'));
     const h = setup({ file: fileA });
     await waitFor(() => expect(h.result.current.status).toBe('failed'));
+    expect(h.result.current.error).toBe('stt down');
   });
 
   it('sets status failed when STT returns empty text (SC3)', async () => {
