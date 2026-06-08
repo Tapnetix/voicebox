@@ -756,8 +756,9 @@ export function ChapterEditor() {
   // ChapterSummary.story_id links each chapter to its Story. We need
   // the book detail to resolve the chapter's story_id.
   const { data: bookDetail } = useBook(selectedBookId);
-  const chapterStoryId =
-    bookDetail?.chapters?.find((c) => c.id === selectedChapterId)?.story_id ?? null;
+  const chapterMeta =
+    bookDetail?.chapters?.find((c) => c.id === selectedChapterId) ?? null;
+  const chapterStoryId = chapterMeta?.story_id ?? null;
   const { data: chapterStory } = useStory(chapterStoryId);
 
   // storyStore actions for starting/stopping playback
@@ -826,10 +827,15 @@ export function ChapterEditor() {
   }
 
   // ── Color legend items ───────────────────────────────────────────────────
-  const legendChars = [
-    characters.find((c) => c.is_narrator),
-    ...characters.filter((c) => !c.is_narrator),
-  ].filter(Boolean) as CharacterResponse[];
+  // Show only the characters who actually appear in THIS chapter, not the
+  // whole book's cast (the legend previously listed every detected character).
+  const chapterCharacterIds = new Set(segments.map((s) => s.character_id));
+  const legendChars = (
+    [
+      characters.find((c) => c.is_narrator),
+      ...characters.filter((c) => !c.is_narrator),
+    ].filter(Boolean) as CharacterResponse[]
+  ).filter((c) => chapterCharacterIds.has(c.id));
 
   return (
     <div className="flex flex-col gap-3 p-4">
@@ -975,29 +981,41 @@ export function ChapterEditor() {
             </span>
           </div>
 
-          {/* The book text — scrollable */}
+          {/* The book text — scrollable, styled to read like a book page:
+              centered measure, serif face, justified prose, chapter heading. */}
           <div
-            className="prose max-h-[72vh] overflow-auto pr-2"
+            className="max-h-[72vh] overflow-auto"
             data-testid="chapter-text"
-            style={{ fontSize: 15, lineHeight: 1.9 }}
           >
-            {visibleSegments.map((seg) => {
-              const color = resolveColor(seg.character_id, characters);
-              const isDialogue = seg.type === 'dialogue';
-              // Find prev/next segments in the full sorted list for merge operations
-              const fullIdx = segments.findIndex((s) => s.id === seg.id);
-              const prevSeg = fullIdx > 0 ? segments[fullIdx - 1] : null;
-              const nextSeg = fullIdx < segments.length - 1 ? segments[fullIdx + 1] : null;
+            <article
+              className="mx-auto max-w-[42rem] px-3 py-2"
+              style={{
+                fontFamily: "Georgia, 'Iowan Old Style', 'Times New Roman', serif",
+                fontSize: 17,
+                lineHeight: 1.85,
+                textAlign: 'justify',
+              }}
+            >
+              {chapterMeta && (
+                <header className="mb-6 mt-1 text-center">
+                  <div className="text-[0.7rem] uppercase tracking-[0.25em] text-muted-foreground">
+                    {t('books.chapterEditor.chapterLabel', { defaultValue: 'Chapter' })}{' '}
+                    {chapterMeta.number}
+                  </div>
+                  <h1 className="mt-1 text-xl font-semibold" style={{ fontFamily: 'inherit' }}>
+                    {chapterMeta.title}
+                  </h1>
+                </header>
+              )}
+              {visibleSegments.map((seg) => {
+                const isDialogue = seg.type === 'dialogue';
+                // Find prev/next segments in the full sorted list for merge operations
+                const fullIdx = segments.findIndex((s) => s.id === seg.id);
+                const prevSeg = fullIdx > 0 ? segments[fullIdx - 1] : null;
+                const nextSeg = fullIdx < segments.length - 1 ? segments[fullIdx + 1] : null;
 
-              return (
-                <p key={seg.id} className="relative mb-4">
-                  <span
-                    style={{
-                      display: 'inline',
-                      borderLeft: `3px solid ${color}`,
-                      paddingLeft: 6,
-                    }}
-                  >
+                return (
+                  <p key={seg.id} className="relative mb-3">
                     <SegmentLine
                       segment={seg}
                       prevSegment={prevSeg}
@@ -1023,10 +1041,10 @@ export function ChapterEditor() {
                         ♪
                       </span>
                     )}
-                  </span>
-                </p>
-              );
-            })}
+                  </p>
+                );
+              })}
+            </article>
           </div>
         </section>
 

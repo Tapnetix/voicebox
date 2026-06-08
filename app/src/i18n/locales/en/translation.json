@@ -207,6 +207,7 @@
       "readalong": "Read-along",
       "readalongHint": "plays the chapter & highlights each line as it's spoken",
       "readalongNeedsAudio": "Generate this chapter's audio first to read along",
+      "chapterLabel": "Chapter",
       "legend": "legend",
       "scrollHint": "scroll · the whole chapter is here",
       "reassignTitle": "Reassign this line to…",
