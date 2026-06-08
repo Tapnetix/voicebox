@@ -4,18 +4,23 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 
-vi.mock('@/components/AudioTrimmer/AudioTrimmer', () => ({
-  AudioTrimmer: ({ onConfirm }: { onConfirm: (f: File, d: number) => void }) => (
-    <button
-      data-testid="trimmer-confirm"
-      onClick={() =>
-        onConfirm(new File(['t'], 'reference-trimmed.wav', { type: 'audio/wav' }), 20)
-      }
-    >
-      confirm
-    </button>
-  ),
-}));
+vi.mock('@/components/AudioTrimmer/AudioTrimmer', async () => {
+  const { forwardRef } = await import('react');
+  return {
+    AudioTrimmer: forwardRef(
+      ({ onConfirm }: { onConfirm: (f: File, d: number) => void }, _ref) => (
+        <button
+          data-testid="trimmer-confirm"
+          onClick={() =>
+            onConfirm(new File(['t'], 'reference-trimmed.wav', { type: 'audio/wav' }), 20)
+          }
+        >
+          confirm
+        </button>
+      ),
+    ),
+  };
+});
 
 const cloneMutateAsync = vi.fn().mockResolvedValue({ id: 'prof-1' });
 vi.mock('@/lib/hooks/useBooks', () => ({

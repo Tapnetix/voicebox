@@ -1,7 +1,7 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useQuery } from '@tanstack/react-query';
 import { Edit2, Mic, Monitor, Music, Upload, X } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import * as z from 'zod';
@@ -55,7 +55,7 @@ import { getAudioDuration } from '@/lib/utils/audio';
 import { usePlatform } from '@/platform/PlatformContext';
 import { useServerStore } from '@/stores/serverStore';
 import { type ProfileFormDraft, useUIStore } from '@/stores/uiStore';
-import { AudioTrimmer } from '@/components/AudioTrimmer/AudioTrimmer';
+import { AudioTrimmer, type AudioTrimmerHandle } from '@/components/AudioTrimmer/AudioTrimmer';
 import { AudioSampleRecording } from './AudioSampleRecording';
 import { AudioSampleSystem } from './AudioSampleSystem';
 import { AudioSampleUpload } from './AudioSampleUpload';
@@ -187,6 +187,23 @@ export function ProfileForm() {
     setText: (v) => form.setValue('referenceText', v, { shouldValidate: true }),
     language: formLanguage,
   });
+
+  // Ref to the active trimmer so Re-transcribe can transcribe the CURRENT
+  // selection directly (no separate "Use this clip" needed).
+  const trimmerRef = useRef<AudioTrimmerHandle>(null);
+  const handleRetranscribe = useCallback(() => {
+    if (selectedFile) {
+      // A clip is already confirmed → re-run on it (forces a re-transcribe).
+      transcript.retranscribe();
+      return;
+    }
+    // Otherwise grab the current trimmer selection and transcribe it. Setting
+    // sampleFile confirms the selection and the hook auto-transcribes it.
+    const clip = trimmerRef.current?.getClip();
+    if (clip) {
+      form.setValue('sampleFile', clip.file, { shouldValidate: true });
+    }
+  }, [selectedFile, transcript, form]);
 
   // Validate raw file can be decoded (no longer reject based on duration —
   // long audio is handled by AudioTrimmer instead).
@@ -912,6 +929,7 @@ export function ProfileForm() {
                               {rawSelectedFile ? (
                                 <AudioTrimmer
                                   file={rawSelectedFile}
+                                  ref={trimmerRef}
                                   onConfirm={(trimmed) => {
                                     form.setValue('sampleFile', trimmed, { shouldValidate: true });
                                   }}
@@ -942,6 +960,7 @@ export function ProfileForm() {
                               {rawSelectedFile ? (
                                 <AudioTrimmer
                                   file={rawSelectedFile}
+                                  ref={trimmerRef}
                                   onConfirm={(trimmed) => {
                                     form.setValue('sampleFile', trimmed, { shouldValidate: true });
                                   }}
@@ -971,6 +990,7 @@ export function ProfileForm() {
                                 {rawSelectedFile ? (
                                   <AudioTrimmer
                                     file={rawSelectedFile}
+                                  ref={trimmerRef}
                                     onConfirm={(trimmed) => {
                                       form.setValue('sampleFile', trimmed, {
                                         shouldValidate: true,
@@ -1007,10 +1027,10 @@ export function ProfileForm() {
                             status={transcript.status}
                             isTranscribing={transcript.isTranscribing}
                             regeneratePrompt={transcript.regeneratePrompt}
-                            onRetranscribe={transcript.retranscribe}
+                            onRetranscribe={handleRetranscribe}
                             onAcceptRegenerate={transcript.acceptRegenerate}
                             onKeepEdits={transcript.keepEdits}
-                            hasClip={!!selectedFile}
+                            hasClip={!!selectedFile || !!rawSelectedFile}
                           />
                         </>
                       )}

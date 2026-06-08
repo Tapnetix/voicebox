@@ -15,7 +15,7 @@
  *
  * data-testids match wireframe-04/04a and are consumed by S4 (c10.spec.ts) and S11 (c11.spec.ts).
  */
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -29,7 +29,7 @@ import { apiClient } from '@/lib/api/client';
 import { cn } from '@/lib/utils/cn';
 import { useBooksStore } from '@/stores/booksStore';
 import { toast } from '@/components/ui/use-toast';
-import { AudioTrimmer } from '@/components/AudioTrimmer/AudioTrimmer';
+import { AudioTrimmer, type AudioTrimmerHandle } from '@/components/AudioTrimmer/AudioTrimmer';
 import { useReferenceTranscript } from '@/lib/hooks/useReferenceTranscript';
 import { ReferenceTranscript } from '@/components/VoiceProfiles/ReferenceTranscript';
 
@@ -232,6 +232,17 @@ function CloneTabBody({
     setText: setTranscriptText,
     // No language — Whisper auto-detect (clone tab has no language picker).
   });
+
+  // Re-transcribe works on the current trimmer selection (no separate confirm).
+  const trimmerRef = useRef<AudioTrimmerHandle>(null);
+  const handleRetranscribe = useCallback(() => {
+    if (confirmedFile) {
+      transcript.retranscribe();
+      return;
+    }
+    const clip = trimmerRef.current?.getClip();
+    if (clip) setConfirmedFile(clip.file);
+  }, [confirmedFile, transcript]);
   const [cloneError, setCloneError] = useState<string | null>(null);
   const [clonedProfileId, setClonedProfileId] = useState<string | null>(null);
 
@@ -432,6 +443,7 @@ function CloneTabBody({
       {sampleFile && (
         <div className="mt-3">
           <AudioTrimmer
+            ref={trimmerRef}
             file={sampleFile}
             onConfirm={(trimmed, _durationSec) => {
               setConfirmedFile(trimmed);
@@ -449,10 +461,10 @@ function CloneTabBody({
           status={transcript.status}
           isTranscribing={transcript.isTranscribing}
           regeneratePrompt={transcript.regeneratePrompt}
-          onRetranscribe={transcript.retranscribe}
+          onRetranscribe={handleRetranscribe}
           onAcceptRegenerate={transcript.acceptRegenerate}
           onKeepEdits={transcript.keepEdits}
-          hasClip={!!confirmedFile}
+          hasClip={!!confirmedFile || !!sampleFile}
         />
       </div>
 

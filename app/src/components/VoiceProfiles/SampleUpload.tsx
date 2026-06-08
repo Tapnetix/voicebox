@@ -1,9 +1,9 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Mic, Monitor, Upload } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import * as z from 'zod';
-import { AudioTrimmer } from '@/components/AudioTrimmer/AudioTrimmer';
+import { AudioTrimmer, type AudioTrimmerHandle } from '@/components/AudioTrimmer/AudioTrimmer';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -73,6 +73,17 @@ export function SampleUpload({ profileId, open, onOpenChange }: SampleUploadProp
     setText: (v) => form.setValue('referenceText', v, { shouldValidate: true }),
     language: profile?.language as LanguageCode | undefined,
   });
+
+  // Re-transcribe works on the current trimmer selection (no separate confirm).
+  const trimmerRef = useRef<AudioTrimmerHandle>(null);
+  const handleRetranscribe = useCallback(() => {
+    if (confirmedFile) {
+      transcript.retranscribe();
+      return;
+    }
+    const clip = trimmerRef.current?.getClip();
+    if (clip) form.setValue('file', clip.file, { shouldValidate: true });
+  }, [confirmedFile, transcript, form]);
 
   const {
     isRecording,
@@ -265,6 +276,7 @@ export function SampleUpload({ profileId, open, onOpenChange }: SampleUploadProp
                 {rawFile && (
                   <AudioTrimmer
                     file={rawFile}
+                    ref={trimmerRef}
                     onConfirm={handleTrimmerConfirm}
                   />
                 )}
@@ -290,6 +302,7 @@ export function SampleUpload({ profileId, open, onOpenChange }: SampleUploadProp
                 {rawFile && !isRecording && (
                   <AudioTrimmer
                     file={rawFile}
+                    ref={trimmerRef}
                     onConfirm={handleTrimmerConfirm}
                   />
                 )}
@@ -316,7 +329,8 @@ export function SampleUpload({ profileId, open, onOpenChange }: SampleUploadProp
                   {rawFile && !isSystemRecording && (
                     <AudioTrimmer
                       file={rawFile}
-                      onConfirm={handleTrimmerConfirm}
+                      ref={trimmerRef}
+                    onConfirm={handleTrimmerConfirm}
                     />
                   )}
                 </TabsContent>
@@ -329,10 +343,10 @@ export function SampleUpload({ profileId, open, onOpenChange }: SampleUploadProp
               status={transcript.status}
               isTranscribing={transcript.isTranscribing}
               regeneratePrompt={transcript.regeneratePrompt}
-              onRetranscribe={transcript.retranscribe}
+              onRetranscribe={handleRetranscribe}
               onAcceptRegenerate={transcript.acceptRegenerate}
               onKeepEdits={transcript.keepEdits}
-              hasClip={!!confirmedFile}
+              hasClip={!!confirmedFile || !!rawFile}
             />
 
             <div className="flex gap-2 justify-end">

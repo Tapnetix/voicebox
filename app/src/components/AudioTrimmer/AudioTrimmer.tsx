@@ -1,5 +1,5 @@
 import { Repeat, SkipBack, Play, Pause, Wand2, ChevronDown } from 'lucide-react';
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback, forwardRef, useImperativeHandle } from 'react';
 import { useTranslation } from 'react-i18next';
 import WaveSurfer from 'wavesurfer.js';
 import { Button } from '@/components/ui/button';
@@ -23,6 +23,12 @@ export interface AudioTrimmerProps {
   file: File;
   onConfirm: (trimmed: File, durationSec: number) => void;
   expandedByDefault?: boolean;
+}
+
+/** Imperative handle so a parent can grab the CURRENT selection on demand
+ *  (e.g. to transcribe the selected window without a separate "Use this clip"). */
+export interface AudioTrimmerHandle {
+  getClip: () => { file: File; durationSec: number } | null;
 }
 
 type Mode = 'loading' | 'whole-clip' | 'collapsed' | 'expanded';
@@ -63,7 +69,10 @@ export function placeWindow(startTime: number, len: number, duration: number): R
 // Component
 // ---------------------------------------------------------------------------
 
-export function AudioTrimmer({ file, onConfirm, expandedByDefault }: AudioTrimmerProps) {
+export const AudioTrimmer = forwardRef<AudioTrimmerHandle, AudioTrimmerProps>(function AudioTrimmer(
+  { file, onConfirm, expandedByDefault },
+  ref,
+) {
   const { t } = useTranslation();
 
   // ---- state ----
@@ -310,10 +319,10 @@ export function AudioTrimmer({ file, onConfirm, expandedByDefault }: AudioTrimme
     window.removeEventListener('pointerup', onPointerUp);
   }, [onPointerMove, onPointerUp]);
 
-  // ---- confirm ----
-  const handleConfirm = useCallback(() => {
+  // ---- build the current clip (slice the selection, or the whole short clip) ----
+  const buildClip = useCallback((): { file: File; durationSec: number } | null => {
     const buffer = bufferRef.current;
-    if (!buffer) return;
+    if (!buffer) return null;
     let blob: Blob;
     let dur: number;
     if (mode === 'whole-clip') {
@@ -323,9 +332,20 @@ export function AudioTrimmer({ file, onConfirm, expandedByDefault }: AudioTrimme
       blob = sliceToWav(buffer, region.start, region.end);
       dur = region.end - region.start;
     }
-    const trimmed = new File([blob], `reference-${Date.now()}.wav`, { type: 'audio/wav' });
-    onConfirm(trimmed, dur);
-  }, [mode, region, onConfirm]);
+    return {
+      file: new File([blob], `reference-${Date.now()}.wav`, { type: 'audio/wav' }),
+      durationSec: dur,
+    };
+  }, [mode, region]);
+
+  const handleConfirm = useCallback(() => {
+    const clip = buildClip();
+    if (clip) onConfirm(clip.file, clip.durationSec);
+  }, [buildClip, onConfirm]);
+
+  // Expose the current selection to parents (used to transcribe the selected
+  // window directly, without requiring a separate "Use this clip" click).
+  useImperativeHandle(ref, () => ({ getClip: buildClip }), [buildClip]);
 
   // ---- derived display values ----
   const lengthSec = mode === 'whole-clip' ? duration : region.end - region.start;
@@ -573,4 +593,4 @@ export function AudioTrimmer({ file, onConfirm, expandedByDefault }: AudioTrimme
       </div>
     </div>
   );
-}
+});

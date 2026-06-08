@@ -41,7 +41,10 @@ vi.mock('wavesurfer.js', () => {
   const handlers: Record<string, ((...a: any[]) => void)[]> = {};
   const ws = {
     registerPlugin: (p: any) => p,
-    on: (e: string, cb: any) => ((handlers[e] ??= []).push(cb)),
+    on: (e: string, cb: any) => {
+      handlers[e] = handlers[e] ?? [];
+      handlers[e].push(cb);
+    },
     play: vi.fn(), pause: vi.fn(), setTime: vi.fn(), getCurrentTime: () => 0,
     getDuration: () => 192, destroy: vi.fn(), seekTo: vi.fn(),
     load: vi.fn().mockResolvedValue(undefined),
@@ -66,7 +69,8 @@ vi.mock('wavesurfer.js/dist/plugins/regions.js', () => {
 });
 
 import { decodeAudioFile } from '@/lib/utils/audio';
-import { AudioTrimmer, placeWindow } from '../AudioTrimmer';
+import { createRef } from 'react';
+import { AudioTrimmer, placeWindow, type AudioTrimmerHandle } from '../AudioTrimmer';
 
 describe('placeWindow (pure selection geometry)', () => {
   it('anchors a window at the given start, clamped to the clip end', () => {
@@ -152,6 +156,19 @@ describe('AudioTrimmer', () => {
     mockWs.instance!.setTime.mockClear();
     fireEvent.click(screen.getByTestId('trimmer-play'));
     expect(mockWs.instance!.setTime).toHaveBeenCalledWith(expect.closeTo(134.4, 1));
+  });
+
+  it('exposes the current selection via the getClip imperative handle', async () => {
+    (decodeAudioFile as any).mockResolvedValue(fakeBuffer(192));
+    const ref = createRef<AudioTrimmerHandle>();
+    render(<AudioTrimmer ref={ref} file={makeFile()} onConfirm={vi.fn()} />);
+    await screen.findByTestId('trimmer-region');
+    const clip = ref.current!.getClip();
+    expect(clip).not.toBeNull();
+    expect(clip!.file).toBeInstanceOf(File);
+    expect(clip!.file.name).toMatch(/reference-\d+\.wav/);
+    // Default window is 20s.
+    expect(clip!.durationSec).toBe(20);
   });
 
   it('S5: an in-range clip rests collapsed and expands on demand', async () => {
