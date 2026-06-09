@@ -207,6 +207,8 @@
       "readalong": "Read-along",
       "readalongHint": "plays the chapter & highlights each line as it's spoken",
       "readalongNeedsAudio": "Generate this chapter's audio first to read along",
+      "readalongNoAudioTitle": "Nothing to read along yet",
+      "readalongNeedsAudioLong": "This chapter hasn't been generated yet. Use Generate on this chapter in the book overview to create its audio, then Read-along will play it.",
       "chapterLabel": "Chapter",
       "legend": "legend",
       "scrollHint": "scroll · the whole chapter is here",

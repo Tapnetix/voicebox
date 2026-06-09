@@ -141,15 +141,18 @@ describe('ChapterEditor', () => {
     expect(within(toolbar).getByText(/Flagged/)).toBeInTheDocument();
   });
 
-  it('renders readalong-btn (present, disabled when chapter has no generated audio — D5)', () => {
-    // useStory/useBook are mocked to null here (no Story → no generated audio),
-    // so read-along has nothing to play and the button must be disabled rather
-    // than a silent no-op. (Enabled-with-audio path is covered in
-    // ChapterEditorReadAlong.test.tsx.)
+  it('readalong-btn stays clickable but marked aria-disabled when the chapter has no generated audio, and shows a guidance hint — D5', () => {
+    // useStory/useBook are mocked to null here (no Story → no generated audio).
+    // The button must NOT be a dead disabled control: it stays clickable (so a
+    // click can explain what to do) but is marked aria-disabled, and a visible
+    // amber hint tells the user to generate the chapter first.
+    // (The enabled-with-audio path is covered in ChapterEditorReadAlong.test.tsx.)
     render(<ChapterEditor />);
     const btn = screen.getByTestId('readalong-btn');
     expect(btn).toBeInTheDocument();
-    expect(btn).toBeDisabled();
+    expect(btn).not.toBeDisabled();
+    expect(btn).toHaveAttribute('aria-disabled', 'true');
+    expect(screen.getByTestId('readalong-hint')).toHaveTextContent(/generate/i);
   });
 
   it('renders review-rail with review-progress', () => {

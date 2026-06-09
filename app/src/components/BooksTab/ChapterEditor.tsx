@@ -22,6 +22,7 @@ import { useTranslation } from 'react-i18next';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { toast } from '@/components/ui/use-toast';
 import { cn } from '@/lib/utils/cn';
 import {
   useCharacters,
@@ -794,16 +795,29 @@ export function ChapterEditor() {
       // Stop read-along
       setReadAlong(false);
       storyPause();
-    } else {
-      // Start read-along — activate the chapter story and begin playback
-      setReadAlong(true);
-      if (chapterStoryId && chapterStory?.items) {
-        const sortedItems = [...chapterStory.items].sort(
-          (a, b) => a.start_time_ms - b.start_time_ms,
-        );
-        storyPlay(chapterStoryId, sortedItems);
-      }
+      return;
     }
+    // Read-along plays the chapter's *generated* narration. If nothing has been
+    // generated there is nothing to play, so explain why rather than silently
+    // doing nothing (or sitting as a dead disabled button).
+    if (!hasReadAlongAudio || !chapterStoryId || !chapterStory?.items) {
+      toast({
+        title: t('books.chapterEditor.readalongNoAudioTitle', {
+          defaultValue: 'Nothing to read along yet',
+        }),
+        description: t('books.chapterEditor.readalongNeedsAudioLong', {
+          defaultValue:
+            "This chapter hasn't been generated yet. Use Generate on this chapter in the book overview to create its audio, then Read-along will play it.",
+        }),
+      });
+      return;
+    }
+    // Start read-along — activate the chapter story and begin playback
+    setReadAlong(true);
+    const sortedItems = [...chapterStory.items].sort(
+      (a, b) => a.start_time_ms - b.start_time_ms,
+    );
+    storyPlay(chapterStoryId, sortedItems);
   }
 
   // ── Client-side filtering ────────────────────────────────────────────────
@@ -899,13 +913,14 @@ export function ChapterEditor() {
 
         <div className="flex items-center gap-2">
           {/* D5: read-along button — starts/stops chapter playback with line highlight.
-              Disabled (with an explanatory hint) until the chapter has generated audio. */}
+              Kept enabled even without audio: clicking it explains (via toast) that
+              the chapter must be generated first, rather than being a dead button. */}
           <Button
             variant={readAlongPlaying ? 'default' : 'secondary'}
             size="sm"
             data-testid="readalong-btn"
             onClick={handleReadAlongToggle}
-            disabled={!hasReadAlongAudio && !readAlongPlaying}
+            aria-disabled={!hasReadAlongAudio && !readAlongPlaying}
             title={
               !hasReadAlongAudio
                 ? t('books.chapterEditor.readalongNeedsAudio', {
@@ -913,13 +928,20 @@ export function ChapterEditor() {
                   })
                 : undefined
             }
+            className={cn(!hasReadAlongAudio && !readAlongPlaying && 'opacity-60')}
           >
             {readAlongPlaying ? '⏸ ' : '▶ '}
             {readAlongPlaying
               ? t('books.chapterEditor.readalongStop', { defaultValue: 'Stop' })
               : t('books.chapterEditor.readalong')}
           </Button>
-          <span className="text-xs text-muted-foreground">
+          <span
+            className={cn(
+              'text-xs',
+              hasReadAlongAudio ? 'text-muted-foreground' : 'text-amber-500',
+            )}
+            data-testid="readalong-hint"
+          >
             {hasReadAlongAudio
               ? t('books.chapterEditor.readalongHint')
               : t('books.chapterEditor.readalongNeedsAudio', {
